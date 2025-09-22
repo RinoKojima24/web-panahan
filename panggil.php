@@ -1,13 +1,18 @@
 <?php
-session_start();
-//connect database
-$sname = "localhost";
-$uname = "root";
-$pwd = "";
-$database = "panahan_turnament";
-$conn = new mysqli( $sname,  $uname,  $pwd,  $database);
+// Mulai session hanya jika belum ada
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-if(!$conn){
-    die("connection failed : ". mysqli_connect_error());
+// Koneksi database
+$sname    = "localhost";
+$uname    = "root";
+$pwd      = "";
+$database = "panahan_turnament_new";
+
+$conn = new mysqli($sname, $uname, $pwd, $database);
+// Cek koneksi
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
 }
 ?>
