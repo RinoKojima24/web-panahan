@@ -2027,7 +2027,7 @@ foreach ($pesertaList as $peserta) {
                     </div>
                 `;
             } else {
-                // File tidak dikenal
+                
                 imageContainer.innerHTML = `
                     <div style="text-align: center; padding: 40px;">
                         <div style="font-size: 48px; color: #ffc107; margin-bottom: 20px;">⚠️</div>
