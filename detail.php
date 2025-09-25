@@ -25,6 +25,10 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
         die("Parameter kegiatan_id dan category_id harus diisi.");
     }
 
+    $mysql_table_score_board = mysqli_query($conn, "SELECT * FROM score_boards WHERE kegiatan_id=".$kegiatan_id." AND category_id=".$category_id." ORDER BY created DESC");
+    if(isset($_GET['scoreboard'])) {
+        $mysql_data_score = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id=".$kegiatan_id." AND category_id=".$category_id." AND score_board_id=".$_GET['scoreboard']." ");
+    }
     // Ambil data kegiatan
     $kegiatanData = [];
     try {
@@ -65,6 +69,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
 
     // Ambil data peserta berdasarkan kegiatan dan kategori
     $pesertaList = [];
+    $peserta_score = [];
     try {
         $queryPeserta = "
             SELECT 
@@ -85,9 +90,88 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
         while ($row = $resultPeserta->fetch_assoc()) {
             $pesertaList[] = $row;
         }
+
+        if(isset($_GET['scoreboard'])) {
+            foreach($pesertaList as $a) {
+                $mysql_score_total = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id=".$kegiatan_id." AND category_id=".$category_id." AND score_board_id =".$_GET['scoreboard']." AND peserta_id=".$a['id']);
+                $score = 0;
+                $x_score = 0;
+                while($b = mysqli_fetch_array($mysql_score_total)) {
+                    if($b['score'] == 'm') {
+                        $score = $score + 0;
+                    } else if($b['score'] == 'x') {
+                        $score = $score + 10;
+                        $x_score = $x_score + 1;
+                    } else {
+                        $score = $score + $b['score'];
+
+                    }
+
+                }
+                // var_dump($score);
+                $peserta_score[] = ['id' => $a['id'], 'total_score' => $score, 'total_x' => $x_score];
+            }
+        }
+
+        // var_dump($peserta_score);
         $stmtPeserta->close();
     } catch (Exception $e) {
         die("Error mengambil data peserta: " . $e->getMessage());
+    }
+
+    if(isset($_POST['create'])) {
+        $create_score_board = mysqli_query($conn,"INSERT INTO `score_boards` 
+                                                    (`kegiatan_id`, `category_id`, `jumlah_sesi`, `jumlah_anak_panah`, `created`) 
+                                                    VALUES 
+                                                    ('".$kegiatan_id."', '".$category_id."', '".$_POST['jumlahSesi']."', '".$_POST['jumlahPanah']."', '".$_POST['local_time']."');");
+        header("Location: detail.php?action=scorecard&resource=index&kegiatan_id=".$kegiatan_id."&category_id=".$category_id);
+    }
+
+    if(isset($_POST['save_score'])) {
+         header("Content-Type: application/json; charset=UTF-8");
+
+        $nama = !empty($_POST['nama']) ? $_POST['nama'] : "Anonim";
+        $checkScore = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id='".$kegiatan_id."' AND category_id='".$category_id."' AND score_board_id='".$_GET['scoreboard']."' AND peserta_id='".$_POST['peserta_id']."' AND arrow='".$_POST['arrow']."' AND session='".$_POST['session']."'");
+        if (!$checkScore) {
+            json_encode([
+                "status" => "error",
+                "message" => "Query Error: " . mysqli_error($conn)
+            ]);
+            exit;
+        }
+        $fetch_checkScore = mysqli_fetch_assoc($checkScore);
+
+        if($fetch_checkScore) {
+             $message = "Ini Edit";
+             $score = mysqli_query($conn,"UPDATE score SET score='".$_POST['score']."' WHERE id='".$fetch_checkScore['id']."'");
+        } else {
+            $score = mysqli_query($conn,"INSERT INTO `score` 
+                                                (`kegiatan_id`, `category_id`, `score_board_id`, `peserta_id`, `arrow`, `session`, `score`) 
+                                                VALUES 
+                                                ('".$kegiatan_id."', '".$category_id."', '".$_GET['scoreboard']."', '".$_POST['peserta_id']."', '".$_POST['arrow']."','".$_POST['session']."','".$_POST['score']."');");
+             $message = "Ini Tambah";
+        }
+
+        // $message = "Ini Edit"; score
+        echo json_encode([
+            "status" => "success",
+            "message" => $message
+        ]);
+        exit;
+    }
+
+    if(isset($_GET['delete_score_board'])) {
+        $delete_score_board = mysqli_query($conn,'DELETE FROM `score_boards` WHERE `score_boards`.`id` ='.$_GET['delete_score_board']);
+        header("Location: detail.php?action=scorecard&resource=index&kegiatan_id=".$kegiatan_id."&category_id=".$category_id);
+    }
+
+    if(isset($_GET['scoreboard'])) { 
+        $sql_show_score_board = mysqli_query($conn,'SELECT * FROM `score_boards` WHERE `score_boards`.`id` ='.$_GET['scoreboard']);
+        $show_score_board = mysqli_fetch_assoc($sql_show_score_board);
+    }
+
+    if(isset($_GET['rangking'])) {
+
     }
 
     // Tutup koneksi database
@@ -117,7 +201,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             }
 
             .container {
-                max-width: 500px;
+                max-width: 1000px;
                 margin: 0 auto;
             }
 
@@ -385,7 +469,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 color: white;
                 text-align: center;
                 font-size: 14px;
-                width: 100%;
+                width: 65px;
                 cursor: pointer;
                 transition: all 0.3s ease;
             }
@@ -477,50 +561,221 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 }
             }
         </style>
+        <style>
+            /* CSS */
+            .table-wrapper {
+            overflow-x: auto;            /* responsive: scroll horizontal bila sempit */
+            -webkit-overflow-scrolling: touch;
+            margin: 1rem 0;
+            border-radius: 12px;
+            background: white;
+            box-shadow: 0 6px 18px rgba(22, 28, 37, 0.06);
+            padding: 12px;
+            }
+
+            /* Class utama table */
+            .styled-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            font-size: 14px;
+            color: #1f2937;
+            min-width: 640px; /* kalau mau selalu ada horizontal scroll di mobile, sesuaikan */
+            }
+
+            /* header */
+            .styled-table thead th {
+            text-align: left;
+            padding: 12px 16px;
+            background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+            border-bottom: 2px solid rgba(15, 23, 42, 0.06);
+            font-weight: 600;
+            position: sticky;    /* untuk header sticky saat scroll */
+            top: 0;
+            z-index: 2;
+            }
+
+            /* sel body */
+            .styled-table tbody td {
+            padding: 12px 16px;
+            vertical-align: middle;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+            }
+
+            /* zebra */
+            .styled-table tbody tr:nth-child(even) {
+            background: #fbfdff;
+            }
+
+            /* hover row */
+            .styled-table tbody tr:hover {
+            background: rgba(99, 102, 241, 0.06); /* ringan highlight */
+            transition: background 150ms ease;
+            }
+
+            /* first column (nomor) alignment */
+            .styled-table tbody td:first-child,
+            .styled-table thead th:first-child {
+            width: 64px;
+            text-align: center;
+            }
+
+            /* aksi (button) kecil */
+            .btn {
+            display: inline-block;
+            padding: 6px 10px;
+            font-size: 13px;
+            border-radius: 8px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: #fff;
+            cursor: pointer;
+            }
+
+            /* responsive tweak: pada layar kecil, font lebih kecil */
+            @media (max-width: 480px) {
+            .styled-table {
+                font-size: 13px;
+            }
+            .styled-table thead th, .styled-table tbody td {
+                padding: 10px 12px;
+            }
+            }
+
+            .header-bar {
+            display: flex;
+            justify-content: space-between; /* bikin kiri & kanan */
+            align-items: center;            /* biar sejajar secara vertikal */
+            padding: 8px 12px;
+            }
+
+
+            /* style link kanan */
+            .add-link {
+            text-decoration: none;
+            background: #2563eb;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            }
+
+            .header-flex {
+                display: flex;
+                justify-content: space-between; /* kiri kanan */
+                align-items: center;           /* biar vertikal rata tengah */
+                margin-bottom: 1rem;           /* kasih jarak ke bawah */
+                }
+
+                .back-btn {
+                font-size: 1.5rem; /* biar tanda panahnya gede */
+                text-decoration: none;
+                color: #333;
+                }
+
+                h3 {
+                margin: 0;
+                }
+
+        </style>
+        
     </head>
     <body>
         <div class="container">
-            <button class="back-btn" onclick="goBack()">←</button>
+            <?php if(isset($_GET['resource'])) { ?>
+                <!-- ScoreBoard Data -->
+                <?php if($_GET['resource'] == 'form') { ?>
+                    <a  class="back-btn" href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
+                    <!-- Form Setup -->
+                    <form action="" method="post">
+                        <div class="setup-form" id="setupForm">
+                            <input type="hidden" id="local_time" name="local_time">
+                            <div class="header">
+                                <div class="logo">🏹</div>
+                                <div class="title">Setup Scorecard</div>
+                                <div class="subtitle">Atur jumlah sesi dan anak panah</div>
+                            </div>
 
-            <!-- Form Setup -->
-            <div class="setup-form" id="setupForm">
-                <div class="header">
-                    <div class="logo">🏹</div>
-                    <div class="title">Setup Scorecard</div>
-                    <div class="subtitle">Atur jumlah sesi dan anak panah</div>
-                </div>
+                            <!-- Info kategori dan peserta -->
+                            <div class="category-info">
+                                <div class="category-name"><?= htmlspecialchars($kategoriData['name']) ?></div>
+                                <div class="event-name"><?= htmlspecialchars($kegiatanData['nama_kegiatan']) ?></div>
+                                <div class="peserta-count"><?= count($pesertaList) ?> Peserta Terdaftar</div>
+                            </div>
 
-                <!-- Info kategori dan peserta -->
-                <div class="category-info">
-                    <div class="category-name"><?= htmlspecialchars($kategoriData['name']) ?></div>
-                    <div class="event-name"><?= htmlspecialchars($kegiatanData['nama_kegiatan']) ?></div>
-                    <div class="peserta-count"><?= count($pesertaList) ?> Peserta Terdaftar</div>
-                </div>
+                            <?php if (count($pesertaList) == 0): ?>
+                                <div class="alert alert-warning">
+                                    <strong>Peringatan:</strong> Tidak ada peserta yang terdaftar dalam kategori ini.
+                                    Silakan pastikan ada peserta yang mendaftar terlebih dahulu.
+                                </div>
+                            <?php endif; ?>
 
-                <?php if (count($pesertaList) == 0): ?>
-                    <div class="alert alert-warning">
-                        <strong>Peringatan:</strong> Tidak ada peserta yang terdaftar dalam kategori ini.
-                        Silakan pastikan ada peserta yang mendaftar terlebih dahulu.
+                            <div class="form-group">
+                                <label class="form-label">Jumlah Sesi</label>
+                                <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" max="12" value="9" placeholder="9">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Jumlah Anak Panah per Sesi</label>
+                                <input type="number" class="form-input" name="jumlahPanah" id="jumlahPanah" min="1" max="10" value="3" placeholder="3">
+                            </div>
+
+                            <!-- <button class="create-btn" onclick="createScorecard()" >
+                                Buat Scorecard
+                            </button> -->
+
+                            <button type="submit" name="create" class="create-btn" onclick="createScorecard()" <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
+                                Buat Scorecard
+                            </button>
+                        </div>
+                    </form>
+                <?php } ?>
+                <?php if($_GET['resource'] == 'index') { ?>
+                    <div class="setup-form" id="setupForm">
+                        <div class="header-bar">
+                            <button class="back-btn" onclick="goBack()">←</button>
+                            <a href="/detail.php?action=scorecard&resource=form&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Tambah data +</a>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>Tanggal</th>
+                                        <th>Jumlah Sesi</th>
+                                        <th>Jumlah Anak Panah</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php 
+                                        $loopNumber = 1;
+                                        while($a = mysqli_fetch_array($mysql_table_score_board)) { ?>
+                                            <tr>
+                                                <td><?= $loopNumber++ ?></td>
+                                                <td><?= $a['created'] ?></td>
+                                                <td><?= $a['jumlah_sesi'] ?></td>
+                                                <td><?= $a['jumlah_anak_panah'] ?></td>
+                                                <td>
+                                                    <a href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>&rangking=true">Ranking</a>
+                                                    <a href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>">Detail</a>
+                                                    <!-- <button onclick="createScorecard('<?= $kegiatan_id ?>', '<?= $category_id ?>', '<?= $a['id'] ?>')">Hapus</button> -->
+                                                    <button onclick="delete_score_board('<?= $kegiatan_id ?>', '<?= $category_id ?>', '<?= $a['id'] ?>')">Hapus</button>
+                                                </td>
+                                            </tr>
+                                        <?php }?>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                <?php endif; ?>
-
-                <div class="form-group">
-                    <label class="form-label">Jumlah Sesi</label>
-                    <input type="number" class="form-input" id="jumlahSesi" min="1" max="12" value="9" placeholder="9">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Jumlah Anak Panah per Sesi</label>
-                    <input type="number" class="form-input" id="jumlahPanah" min="1" max="10" value="3" placeholder="3">
-                </div>
-
-                <button class="create-btn" onclick="createScorecard()" <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
-                    Buat Scorecard
-                </button>
-            </div>
+                <?php } ?>
+            <?php }?>
 
             <!-- Scorecard Display -->
             <div class="scorecard-container" id="scorecardContainer">
+                <div class="header-flex">
+                    <a  class="back-btn" href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
+                    <h3>Score Board <?= (isset($_GET['rangking'])) ? '(Ranking)' : '' ?></h3>
+                </div>
                 <div class="scorecard-header">
                     <div class="category-header-info">
                         <div class="category-icon">🎯</div>
@@ -560,15 +815,91 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
 
         <script>
             // Data peserta dari PHP
+
+            // ambil waktu lokal user
+            <?php if($_GET['resource'] == 'form') { ?>
+                let now = new Date();
+                // format ke "YYYY-MM-DD HH:MM:SS"
+                let formatted = now.getFullYear() + "-" 
+                    + String(now.getMonth()+1).padStart(2, '0') + "-"
+                    + String(now.getDate()).padStart(2, '0') + " "
+                    + String(now.getHours()).padStart(2, '0') + ":"
+                    + String(now.getMinutes()).padStart(2, '0') + ":"
+                    + String(now.getSeconds()).padStart(2, '0');
+
+                document.getElementById("local_time").value = formatted;
+            <?php } ?>
+            // rangking
             const pesertaData = <?= json_encode($pesertaList) ?>;
+            <?php if(isset($_GET['rangking'])) { ?>
+                const peserta_score = <?= json_encode($peserta_score) ?>;
+                console.log(peserta_score);
+                function tambahAtributById(id, key, value) {
+                    const peserta = pesertaData.find(p => p.id === id);
+                    if (peserta) {
+                        peserta[key] = value;
+                    }
+                }
+
+                for(let i = 0; i < peserta_score.length; i++) {
+                    tambahAtributById(peserta_score[i]['id'], "total_score", peserta_score[i]['total_score']);
+                    tambahAtributById(peserta_score[i]['id'], "x_score", peserta_score[i]['total_x']);
+                }
+
+                pesertaData.sort((a, b) => {
+                    if (b.total_score !== a.total_score) {
+                        return b.total_score - a.total_score; // urut berdasarkan total_score
+                    }
+                    return b.x_score - a.x_score; // kalau sama, urut x_score
+                });
+
+            <?php } ?>
+            // console.log(pesertaData);
+            <?php if(isset($_GET['scoreboard'])) { ?>
+                openScoreBoard("<?= $show_score_board['jumlah_sesi'] ?>", "<?= $show_score_board['jumlah_anak_panah'] ?>");
+            <?php } ?> 
+            function delete_score_board(kegiatan_id, category_id, id) {
+                if(confirm("Apakah anda yakin akan menghapus data ini?")) {
+                    window.location.href = `detail.php?action=scorecard&resource=index&kegiatan_id=${kegiatan_id}&category_id=${category_id}&delete_score_board=${id}`;
+                }
+            }
+
+            <?php 
+            
+                if(isset($mysql_data_score)) {
+                    while($jatuh = mysqli_fetch_array($mysql_data_score)) { ?> 
+                        document.getElementById("peserta_<?= $jatuh['peserta_id'] ?>_a<?= $jatuh['arrow'] ?>_s<?= $jatuh['session'] ?>").value = "<?= $jatuh['score'] ?>";
+                        hitungPerArrow('peserta_<?= $jatuh['peserta_id'] ?>', '<?= $jatuh['arrow'] ?>', '<?= $jatuh['session'] ?>','<?= $show_score_board['jumlah_anak_panah'] ?>')
+                    <?php } ?>
+                <?php }
+             ?> 
             
             function goBack() {
                 window.history.back();
             }
 
+            function openScoreBoard(jumlahSesi_data, jumlahPanah_data) {
+                // Update header counts
+                const jumlahSesi = parseInt(jumlahSesi_data);
+                const jumlahPanah = parseInt(jumlahPanah_data);
+                document.getElementById('panahCount').textContent = jumlahSesi * jumlahPanah;
+
+                // Generate player sections untuk setiap peserta
+                generatePlayerSections(jumlahSesi, jumlahPanah);
+
+                // Show scorecard, hide form
+                document.getElementById('setupForm').style.display = 'none';
+                document.getElementById('scorecardContainer').style.display = 'block';
+                
+                // Adjust container width untuk scorecard
+                document.querySelector('.container').style.maxWidth = '1200px';
+            }
+
             function createScorecard() {
                 const jumlahSesi = parseInt(document.getElementById('jumlahSesi').value);
                 const jumlahPanah = parseInt(document.getElementById('jumlahPanah').value);
+                // const jumlahSesi = parseInt(document.getElementById('jumlahSesi').value);
+                // const jumlahPanah = parseInt(document.getElementById('jumlahPanah').value);
 
                 if (!jumlahSesi || !jumlahPanah) {
                     alert('Mohon isi jumlah sesi dan anak panah');
@@ -612,7 +943,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                     playerSection.className = 'player-section';
                     playerSection.innerHTML = `
                         <div class="player-header">
-                            ${playerName} (${peserta.jenis_kelamin})
+                            ${playerName} (${peserta.jenis_kelamin}) <?= isset($_GET['rangking']) ? 'Juara ${index + 1}'  : ''  ?>
                         </div>
                         <div class="sessions-container" id="${playerId}_sessions">
                             ${generateSessionCards(playerId, jumlahSesi, jumlahPanah)}
@@ -627,19 +958,139 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 });
             }
 
+            function validateArrowInput(el) {
+                let val = el.value.trim().toLowerCase();
+
+                // hanya boleh angka 0–10, huruf x, atau m
+                if (!/^(10|[0-9]|x|m)?$/i.test(val)) {
+                    el.value = ""; // reset kalau tidak valid
+                }
+            }
+
+
+            function hitungPerArrow(playerId, arrow, session, totalArrow, el) {
+                // Ambil semua input dengan id mulai dari playerId
+                let inputs = document.querySelectorAll(`.arrow-input[id^="${playerId}_a${arrow}_s"]`);
+                let ini_session = session;
+                // console.log(playerId);
+
+                let hasil = {}; 
+
+                let total = 0;
+
+                inputs.forEach(input => {
+                    let id = input.id; 
+
+                    let val = input.value.trim().toLowerCase();
+
+                    // // Konversi nilai ke angka
+                    let score = 0;
+                    if (val === "x") {
+                        score = 10;
+                    } else if (val === "m") {
+                        score = 0;
+                    } else if (!isNaN(val) && val !== "") {
+                        score = parseInt(val);
+                    }
+
+                    total += score;
+                });
+
+                // console.log("Total per session:", total);
+                document.getElementById(`${playerId}_total_a${arrow}`).value = total;
+                // document.getElementById(`${playerId}_end_a${arrow}`).value = total;
+                // Total Terakhir
+                let endTotal = 0;
+                
+                for(let arrow_i = 1; arrow_i <= totalArrow; arrow_i++) {
+                    let EndTotal = 0;
+                    for(let arrow_u = 1; arrow_u <= arrow_i; arrow_u++) {
+                        EndTotal += parseInt(document.getElementById(`${playerId}_total_a${arrow_u}`).value);
+                    }
+
+                    console.log(EndTotal);
+                    if(isNaN(EndTotal)) {
+                        document.getElementById(`${playerId}_end_a${arrow_i}`).value = 0;
+                    } else {
+                        document.getElementById(`${playerId}_end_a${arrow_i}`).value = EndTotal;
+                    }
+                }
+
+                // console.log(total);
+                // if(document.getElementById(`${playerId}_end_a${arrow-1}`) == null) {
+                //     document.getElementById(`${playerId}_end_a${arrow}`).value = total;
+                // } else {
+                //     document.getElementById(`${playerId}_end_a${arrow}`).value = total + parseInt(document.getElementById(`${playerId}_end_a${arrow-1}`).value);
+                //     // breal
+                // }
+
+
+                // Total Keseluruhan
+                let total_keselurahan = 0;
+                for(let arrow_y = 0; arrow_y < totalArrow; arrow_y++) {
+                    if(document.getElementById(`${playerId}_total_a${arrow_y + 1}`).value == "") {
+                        total_keselurahan += 0;  
+                    } else {
+                        total_keselurahan += parseInt(document.getElementById(`${playerId}_total_a${arrow_y + 1}`).value);
+                    }
+                }
+
+                let arr_playerID = playerId.split("_");
+  
+                document.getElementById(`${playerId}_grand_total`).innerText = total_keselurahan + " poin";
+
+                if(el != null) {
+                    // console.log(el.id);
+                    let nama = "Marsha and The Bear";
+                    
+
+                    fetch("", { // kosong artinya request ke file ini sendiri
+                        method: "POST",
+                        headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                        },
+                        body: "save_score=1" +
+                            "&nama=" + encodeURIComponent(nama) +
+                            "&peserta_id=" + encodeURIComponent(arr_playerID[1]) +
+                            "&arrow=" + encodeURIComponent(arrow) +
+                            "&session=" + encodeURIComponent(ini_session) + 
+                            "&score=" + encodeURIComponent(document.getElementById(el.id).value)
+
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log("Halo, " + data.message);
+                    })
+                    .catch(err => console.error(err));   
+                    // console.log("-");
+                }
+
+                return 0;
+            }
+
+
+
             function generateSessionCards(playerId, jumlahSesi, jumlahPanah) {
                 let sessionsHtml = '';
                 
                 for (let session = 1; session <= jumlahSesi; session++) {
+                    // const arrowsHtml = Array.from({length: jumlahPanah}, (_, arrow) => `
+                    //     <input type="text" 
+                    //            class="arrow-input" 
+                    //            id="${playerId}_s${session}_a${arrow + 1}"
+                    //            min="0" 
+                    //            max="10" 
+                    //            placeholder="${arrow + 1}"
+                    //            oninput="validateArrowInput(this); updateSessionTotal('${playerId}', ${session}, ${jumlahSesi}); hitungPerArrow('${playerId}')"
+                    //            onchange="this.blur()">
+                    // `).join('');
                     const arrowsHtml = Array.from({length: jumlahPanah}, (_, arrow) => `
-                        <input type="number" 
+                        <input type="text" 
                                class="arrow-input" 
-                               id="${playerId}_s${session}_a${arrow + 1}"
-                               min="0" 
-                               max="10" 
+                               <?= (isset($_GET['rangking'])) ? 'disabled' : '' ?>
+                               id="${playerId}_a${arrow + 1}_s${session}"
                                placeholder="${arrow + 1}"
-                               oninput="updateSessionTotal('${playerId}', ${session}, ${jumlahSesi})"
-                               onchange="this.blur()">
+                               oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${arrow + 1}', '${session}','${jumlahPanah}', this)">
                     `).join('');
                     
                     sessionsHtml += `
@@ -648,11 +1099,46 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                             <div class="arrows-container" id="${playerId}_session_${session}">
                                 ${arrowsHtml}
                             </div>
-                            <div class="session-total" id="${playerId}_total_s${session}">Total: 0</div>
                         </div>
                     `;
+                            // <div class="session-total" id="${playerId}_total_s${session}">Total: 0</div>
+
                 }
-                
+
+                const arrowsHtmlTotal = Array.from({length: jumlahPanah}, (_, arrow) => `
+                    <input type="text" 
+                            class="arrow-input" 
+                            id="${playerId}_total_a${arrow + 1}"
+                            placeholder="${arrow + 1}"
+                            readonly>
+                `).join('');
+            
+                sessionsHtml += `
+                    <div class="session-card">
+                        <div class="session-header">Total</div>
+                        <div class="arrows-container" id="${playerId}_session_total">
+                            ${arrowsHtmlTotal}
+                        </div>
+                    </div>
+                `;
+
+                const arrowsHtmlEnd = Array.from({length: jumlahPanah}, (_, arrow) => `
+                    <input type="text" 
+                            class="arrow-input" 
+                            id="${playerId}_end_a${arrow + 1}"
+                            placeholder="${arrow + 1}"
+                            readonly>
+                `).join('');
+            
+                sessionsHtml += `
+                    <div class="session-card">
+                        <div class="session-header">End</div>
+                        <div class="arrows-container" id="${playerId}_session_end">
+                            ${arrowsHtmlEnd}
+                        </div>
+                    </div>
+                `;
+
                 return sessionsHtml;
             }
 
@@ -1770,7 +2256,7 @@ foreach ($pesertaList as $peserta) {
                             
                             <!-- Input Button - Hanya muncul jika kategori dipilih -->
                             <?php if (isset($filter_kategori) && $filter_kategori > 0): ?>
-                                <a href="?action=scorecard&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $filter_kategori ?>" 
+                                <a href="?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $filter_kategori ?>" 
                                    class="btn btn-success input-btn" 
                                    title="Setup scorecard untuk kategori yang dipilih">
                                     Input
@@ -1972,7 +2458,7 @@ foreach ($pesertaList as $peserta) {
                 const selectedKategori = kategoriSelect.value;
                 
                 if (selectedKategori && selectedKategori !== '') {
-                    inputBtn.href = `?action=scorecard&kegiatan_id=<?= $kegiatan_id ?>&category_id=${selectedKategori}`;
+                    inputBtn.href = `?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=${selectedKategori}`;
                     inputBtn.style.display = 'inline-block';
                 } else {
                     inputBtn.style.display = 'none';
