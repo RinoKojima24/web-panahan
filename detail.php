@@ -29,6 +29,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     if(isset($_GET['scoreboard'])) {
         $mysql_data_score = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id=".$kegiatan_id." AND category_id=".$category_id." AND score_board_id=".$_GET['scoreboard']." ");
     }
+    
     // Ambil data kegiatan
     $kegiatanData = [];
     try {
@@ -103,17 +104,13 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                         $score = $score + 10;
                         $x_score = $x_score + 1;
                     } else {
-                        $score = $score + $b['score'];
-
+                        $score = $score + (int)$b['score'];
                     }
-
                 }
-                // var_dump($score);
                 $peserta_score[] = ['id' => $a['id'], 'total_score' => $score, 'total_x' => $x_score];
             }
         }
 
-        // var_dump($peserta_score);
         $stmtPeserta->close();
     } catch (Exception $e) {
         die("Error mengambil data peserta: " . $e->getMessage());
@@ -128,12 +125,12 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     }
 
     if(isset($_POST['save_score'])) {
-         header("Content-Type: application/json; charset=UTF-8");
+        header("Content-Type: application/json; charset=UTF-8");
 
         $nama = !empty($_POST['nama']) ? $_POST['nama'] : "Anonim";
         $checkScore = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id='".$kegiatan_id."' AND category_id='".$category_id."' AND score_board_id='".$_GET['scoreboard']."' AND peserta_id='".$_POST['peserta_id']."' AND arrow='".$_POST['arrow']."' AND session='".$_POST['session']."'");
         if (!$checkScore) {
-            json_encode([
+            echo json_encode([
                 "status" => "error",
                 "message" => "Query Error: " . mysqli_error($conn)
             ]);
@@ -142,17 +139,25 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
         $fetch_checkScore = mysqli_fetch_assoc($checkScore);
 
         if($fetch_checkScore) {
-             $message = "Ini Edit";
-             $score = mysqli_query($conn,"UPDATE score SET score='".$_POST['score']."' WHERE id='".$fetch_checkScore['id']."'");
+            $message = "Score updated";
+            if(empty($_POST['score'])) {
+                // Delete score if empty
+                $score = mysqli_query($conn,"DELETE FROM score WHERE id='".$fetch_checkScore['id']."'");
+            } else {
+                $score = mysqli_query($conn,"UPDATE score SET score='".$_POST['score']."' WHERE id='".$fetch_checkScore['id']."'");
+            }
         } else {
-            $score = mysqli_query($conn,"INSERT INTO `score` 
-                                                (`kegiatan_id`, `category_id`, `score_board_id`, `peserta_id`, `arrow`, `session`, `score`) 
-                                                VALUES 
-                                                ('".$kegiatan_id."', '".$category_id."', '".$_GET['scoreboard']."', '".$_POST['peserta_id']."', '".$_POST['arrow']."','".$_POST['session']."','".$_POST['score']."');");
-             $message = "Ini Tambah";
+            if(!empty($_POST['score'])) {
+                $score = mysqli_query($conn,"INSERT INTO `score` 
+                                                    (`kegiatan_id`, `category_id`, `score_board_id`, `peserta_id`, `arrow`, `session`, `score`) 
+                                                    VALUES 
+                                                    ('".$kegiatan_id."', '".$category_id."', '".$_GET['scoreboard']."', '".$_POST['peserta_id']."', '".$_POST['arrow']."','".$_POST['session']."','".$_POST['score']."');");
+                $message = "Score added";
+            } else {
+                $message = "Empty score - no action";
+            }
         }
 
-        // $message = "Ini Edit"; score
         echo json_encode([
             "status" => "success",
             "message" => $message
@@ -168,10 +173,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     if(isset($_GET['scoreboard'])) { 
         $sql_show_score_board = mysqli_query($conn,'SELECT * FROM `score_boards` WHERE `score_boards`.`id` ='.$_GET['scoreboard']);
         $show_score_board = mysqli_fetch_assoc($sql_show_score_board);
-    }
-
-    if(isset($_GET['rangking'])) {
-
     }
 
     // Tutup koneksi database
@@ -201,7 +202,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             }
 
             .container {
-                max-width: 1000px;
+                max-width: 1200px;
                 margin: 0 auto;
             }
 
@@ -218,6 +219,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 cursor: pointer;
                 margin-bottom: 20px;
                 transition: background 0.3s ease;
+                text-decoration: none;
             }
 
             .back-btn:hover {
@@ -365,7 +367,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 display: none;
                 max-width: none;
                 width: 100%;
-                max-width: 1200px;
             }
 
             .scorecard-header {
@@ -407,118 +408,190 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 border-radius: 8px;
             }
 
-            /* Player sections */
+            /* NEW: Table-based Scorecard */
             .player-section {
-                margin-bottom: 30px;
+                margin-bottom: 40px;
                 background: rgba(0, 0, 0, 0.2);
-                border-radius: 12px;
-                padding: 20px;
+                border-radius: 15px;
+                padding: 25px;
+                box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
             }
 
             .player-header {
-                font-size: 16px;
-                font-weight: 600;
-                margin-bottom: 15px;
-                color: #74b9ff;
+                font-size: 18px;
+                font-weight: 700;
+                margin-bottom: 20px;
+                color: white;
                 text-align: center;
-                background: rgba(116, 185, 255, 0.1);
-                padding: 10px;
-                border-radius: 8px;
-            }
-
-            /* Horizontal Sessions Layout */
-            .sessions-container {
-                display: flex;
-                gap: 10px;
-                overflow-x: auto;
-                padding-bottom: 10px;
-                margin-bottom: 15px;
-            }
-
-            .session-card {
-                min-width: 80px;
-                background: rgba(116, 185, 255, 0.1);
-                border: 1px solid rgba(116, 185, 255, 0.3);
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                padding: 15px;
                 border-radius: 12px;
-                padding: 12px;
-                text-align: center;
-                flex-shrink: 0;
+                box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
             }
 
-            .session-header {
+            /* Score Table */
+            .score-table-container {
+                overflow-x: auto;
+                margin: 20px 0;
+                border-radius: 12px;
+                background: white;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .score-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 font-size: 14px;
-                font-weight: 600;
-                color: #74b9ff;
-                margin-bottom: 10px;
-                padding: 8px;
-                background: rgba(116, 185, 255, 0.2);
-                border-radius: 8px;
+                background: white;
+                min-width: 600px;
             }
 
-            .arrows-container {
-                display: flex;
-                flex-direction: column;
-                gap: 6px;
+            .score-table th {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 8px;
+                text-align: center;
+                font-weight: 600;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                position: sticky;
+                top: 0;
+                z-index: 5;
+            }
+
+            .score-table td {
+                padding: 8px;
+                border: 1px solid #e1e8ed;
+                text-align: center;
+                vertical-align: middle;
+            }
+
+            .session-row:nth-child(even) {
+                background: rgba(79, 172, 254, 0.05);
+            }
+
+            .session-row:hover {
+                background: rgba(79, 172, 254, 0.1);
+            }
+
+            .session-label {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                font-weight: 600;
+                font-size: 14px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                min-width: 60px;
             }
 
             .arrow-input {
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.2);
+                width: 50px;
+                height: 40px;
+                background: transparent;
+                border: 2px solid transparent;
                 border-radius: 6px;
-                padding: 8px;
-                color: white;
+                padding: 8px 4px;
                 text-align: center;
                 font-size: 14px;
-                width: 65px;
-                cursor: pointer;
+                font-weight: 600;
+                color: white;
                 transition: all 0.3s ease;
+                box-sizing: border-box;
             }
 
             .arrow-input:hover {
-                background: rgba(116, 185, 255, 0.1);
-                border-color: #74b9ff;
+                background: rgba(79, 172, 254, 0.1);
+                border-color: #4facfe;
             }
 
             .arrow-input:focus {
                 outline: none;
-                border-color: #74b9ff;
-                background: rgba(116, 185, 255, 0.15);
+                background: white;
+                color:black;
+                border-color: #4facfe;
+                box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
             }
 
-            .session-total {
-                margin-top: 10px;
-                padding: 8px;
-                background: rgba(253, 203, 110, 0.2);
-                border-radius: 6px;
+            .arrow-input:disabled {
+                background: #f8f9fa;
+                color: #666;
+                cursor: not-allowed;
+            }
+
+            .total-cell {
+                background: rgba(253, 203, 110, 0.1);
+                font-weight: 700;
+                color: #e17055;
+            }
+
+            .end-cell {
+                background: rgba(0, 184, 148, 0.1);
+                color: #00b894;
+                font-weight: 700;
+            }
+
+            /* Score value styling */
+            .arrow-input[value="x"],
+            .arrow-input[value="X"] {
+                background: rgba(40, 167, 69, 0.1);
+                border-color: #28a745;
+                color: #28a745;
+                font-weight: 700;
+            }
+
+            .arrow-input[value="m"],
+            .arrow-input[value="M"] {
+                background: rgba(220, 53, 69, 0.1);
+                border-color: #dc3545;
+                color: #dc3545;
+                font-weight: 700;
+            }
+
+            .arrow-input[value="10"] {
+                background: rgba(40, 167, 69, 0.1);
+                border-color: #28a745;
+                color: #28a745;
+                font-weight: 700;
+            }
+
+            .arrow-input[value="9"],
+            .arrow-input[value="8"] {
+                background: rgba(255, 193, 7, 0.1);
+                border-color: #ffc107;
+                color: #856404;
                 font-weight: 600;
-                font-size: 14px;
-                color: #fdcb6e;
             }
 
             .total-summary {
-                background: rgba(0, 184, 148, 0.1);
-                border: 1px solid rgba(0, 184, 148, 0.3);
+                background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
                 border-radius: 12px;
-                padding: 15px;
+                padding: 20px;
                 text-align: center;
-                margin-bottom: 20px;
+                margin-top: 20px;
+                color: white;
+                box-shadow: 0 4px 15px rgba(67, 233, 123, 0.3);
             }
 
             .grand-total {
-                font-size: 18px;
+                font-size: 24px;
                 font-weight: 700;
-                color: #00b894;
+                margin-bottom: 5px;
+            }
+
+            .x-count {
+                font-size: 16px;
+                font-weight: 600;
+                opacity: 0.9;
             }
 
             .edit-btn {
                 background: rgba(116, 185, 255, 0.2);
                 border: 1px solid rgba(116, 185, 255, 0.5);
                 color: white;
-                padding: 8px 16px;
+                padding: 12px 20px;
                 border-radius: 8px;
-                font-size: 12px;
+                font-size: 14px;
                 cursor: pointer;
-                margin-top: 15px;
+                margin-top: 20px;
                 width: 100%;
             }
 
@@ -526,25 +599,111 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 background: rgba(116, 185, 255, 0.3);
             }
 
+            /* Table styles for index page */
+            .table-wrapper {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 1rem 0;
+                border-radius: 12px;
+                background: white;
+                box-shadow: 0 6px 18px rgba(22, 28, 37, 0.06);
+                padding: 12px;
+            }
+
+            .styled-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+                font-size: 14px;
+                color: #1f2937;
+                min-width: 640px;
+            }
+
+            .styled-table thead th {
+                text-align: left;
+                padding: 12px 16px;
+                background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+                border-bottom: 2px solid rgba(15, 23, 42, 0.06);
+                font-weight: 600;
+                position: sticky;
+                top: 0;
+                z-index: 2;
+            }
+
+            .styled-table tbody td {
+                padding: 12px 16px;
+                vertical-align: middle;
+                border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+            }
+
+            .styled-table tbody tr:nth-child(even) {
+                background: #fbfdff;
+            }
+
+            .styled-table tbody tr:hover {
+                background: rgba(99, 102, 241, 0.06);
+                transition: background 150ms ease;
+            }
+
+            .styled-table tbody td:first-child,
+            .styled-table thead th:first-child {
+                width: 64px;
+                text-align: center;
+            }
+
+            .btn {
+                display: inline-block;
+                padding: 6px 10px;
+                font-size: 13px;
+                border-radius: 8px;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                background: #fff;
+                cursor: pointer;
+            }
+
+            .header-bar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 12px;
+            }
+
+            .add-link {
+                text-decoration: none;
+                background: #2563eb;
+                color: white;
+                padding: 6px 12px;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+
+            .header-flex {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 1rem;
+            }
+
+            h3 {
+                margin: 0;
+                color: white;
+            }
+.session-card {
+  display: flex;
+  justify-content: flex-start; /* semua kumpul di kiri */
+  gap: 2px;                   /* jarak antar kolom */
+  margin-bottom: 20px;
+}
+
+.session-card > div {
+  min-width: 150px; /* biar ukurannya konsisten */
+}
+
             /* Responsive adjustments */
             @media (max-width: 768px) {
                 .container {
                     max-width: 100%;
                     padding: 0 10px;
-                }
-                
-                .sessions-container {
-                    gap: 8px;
-                }
-                
-                .session-card {
-                    min-width: 70px;
-                    padding: 10px;
-                }
-                
-                .arrow-input {
-                    padding: 6px;
-                    font-size: 12px;
                 }
 
                 .scorecard-container {
@@ -559,132 +718,60 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 .category-header-info {
                     justify-content: center;
                 }
-            }
-        </style>
-        <style>
-            /* CSS */
-            .table-wrapper {
-            overflow-x: auto;            /* responsive: scroll horizontal bila sempit */
-            -webkit-overflow-scrolling: touch;
-            margin: 1rem 0;
-            border-radius: 12px;
-            background: white;
-            box-shadow: 0 6px 18px rgba(22, 28, 37, 0.06);
-            padding: 12px;
+
+                .score-table {
+                    font-size: 12px;
+                    min-width: 500px;
+                }
+                
+                .score-table th,
+                .score-table td {
+                    padding: 6px 4px;
+                }
+                
+                .arrow-input {
+                    width: 40px;
+                    height: 35px;
+                    padding: 6px 2px;
+                    font-size: 12px;
+                }
+                
+                .player-header {
+                    font-size: 16px;
+                    padding: 12px;
+                }
+                
+                .grand-total {
+                    font-size: 20px;
+                }
             }
 
-            /* Class utama table */
-            .styled-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-            font-size: 14px;
-            color: #1f2937;
-            min-width: 640px; /* kalau mau selalu ada horizontal scroll di mobile, sesuaikan */
-            }
-
-            /* header */
-            .styled-table thead th {
-            text-align: left;
-            padding: 12px 16px;
-            background: linear-gradient(180deg,#f8fafc,#f1f5f9);
-            border-bottom: 2px solid rgba(15, 23, 42, 0.06);
-            font-weight: 600;
-            position: sticky;    /* untuk header sticky saat scroll */
-            top: 0;
-            z-index: 2;
-            }
-
-            /* sel body */
-            .styled-table tbody td {
-            padding: 12px 16px;
-            vertical-align: middle;
-            border-bottom: 1px solid rgba(15, 23, 42, 0.04);
-            }
-
-            /* zebra */
-            .styled-table tbody tr:nth-child(even) {
-            background: #fbfdff;
-            }
-
-            /* hover row */
-            .styled-table tbody tr:hover {
-            background: rgba(99, 102, 241, 0.06); /* ringan highlight */
-            transition: background 150ms ease;
-            }
-
-            /* first column (nomor) alignment */
-            .styled-table tbody td:first-child,
-            .styled-table thead th:first-child {
-            width: 64px;
-            text-align: center;
-            }
-
-            /* aksi (button) kecil */
-            .btn {
-            display: inline-block;
-            padding: 6px 10px;
-            font-size: 13px;
-            border-radius: 8px;
-            border: 1px solid rgba(15, 23, 42, 0.08);
-            background: #fff;
-            cursor: pointer;
-            }
-
-            /* responsive tweak: pada layar kecil, font lebih kecil */
             @media (max-width: 480px) {
-            .styled-table {
-                font-size: 13px;
-            }
-            .styled-table thead th, .styled-table tbody td {
-                padding: 10px 12px;
-            }
-            }
-
-            .header-bar {
-            display: flex;
-            justify-content: space-between; /* bikin kiri & kanan */
-            align-items: center;            /* biar sejajar secara vertikal */
-            padding: 8px 12px;
-            }
-
-
-            /* style link kanan */
-            .add-link {
-            text-decoration: none;
-            background: #2563eb;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            }
-
-            .header-flex {
-                display: flex;
-                justify-content: space-between; /* kiri kanan */
-                align-items: center;           /* biar vertikal rata tengah */
-                margin-bottom: 1rem;           /* kasih jarak ke bawah */
+                .styled-table {
+                    font-size: 13px;
+                }
+                .styled-table thead th, .styled-table tbody td {
+                    padding: 10px 12px;
                 }
 
-                .back-btn {
-                font-size: 1.5rem; /* biar tanda panahnya gede */
-                text-decoration: none;
-                color: #333;
+                .score-table {
+                    min-width: 400px;
                 }
-
-                h3 {
-                margin: 0;
+                
+                .arrow-input {
+                    width: 35px;
+                    height: 30px;
                 }
-
+            }
         </style>
         
     </head>
     <body>
-        <div class="container">
+         <div class="container">
             <?php if(isset($_GET['resource'])) { ?>
                 <!-- ScoreBoard Data -->
                 <?php if($_GET['resource'] == 'form') { ?>
-                    <a  class="back-btn" href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
+                    <a  class="back-btn" href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
                     <!-- Form Setup -->
                     <form action="" method="post">
                         <div class="setup-form" id="setupForm">
@@ -711,19 +798,19 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
 
                             <div class="form-group">
                                 <label class="form-label">Jumlah Sesi</label>
-                                <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" max="12" value="9" placeholder="9">
+                                <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" value="9" placeholder="9">
                             </div>
 
                             <div class="form-group">
                                 <label class="form-label">Jumlah Anak Panah per Sesi</label>
-                                <input type="number" class="form-input" name="jumlahPanah" id="jumlahPanah" min="1" max="10" value="3" placeholder="3">
+                                <input type="number" class="form-input" name="jumlahPanah" id="jumlahPanah" min="1"  value="3" placeholder="3">
                             </div>
 
                             <!-- <button class="create-btn" onclick="createScorecard()" >
                                 Buat Scorecard
                             </button> -->
 
-                            <button type="submit" name="create" class="create-btn" onclick="createScorecard()" <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
+                            <button type="submit" name="create" class="create-btn" <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
                                 Buat Scorecard
                             </button>
                         </div>
@@ -733,7 +820,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                     <div class="setup-form" id="setupForm">
                         <div class="header-bar">
                             <button class="back-btn" onclick="goBack()">←</button>
-                            <a href="/detail.php?action=scorecard&resource=form&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Tambah data +</a>
+                            <a href="detail.php?action=scorecard&resource=form&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Tambah data +</a>
                         </div>
                         <div class="table-wrapper">
                             <table class="styled-table">
@@ -756,8 +843,8 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                                                 <td><?= $a['jumlah_sesi'] ?></td>
                                                 <td><?= $a['jumlah_anak_panah'] ?></td>
                                                 <td>
-                                                    <a href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>&rangking=true">Ranking</a>
-                                                    <a href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>">Detail</a>
+                                                    <a href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>&rangking=true">Ranking</a>
+                                                    <a href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>">Detail</a>
                                                     <!-- <button onclick="createScorecard('<?= $kegiatan_id ?>', '<?= $category_id ?>', '<?= $a['id'] ?>')">Hapus</button> -->
                                                     <button onclick="delete_score_board('<?= $kegiatan_id ?>', '<?= $category_id ?>', '<?= $a['id'] ?>')">Hapus</button>
                                                 </td>
@@ -773,7 +860,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             <!-- Scorecard Display -->
             <div class="scorecard-container" id="scorecardContainer">
                 <div class="header-flex">
-                    <a  class="back-btn" href="/detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
+                    <a  class="back-btn" href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
                     <h3>Score Board <?= (isset($_GET['rangking'])) ? '(Ranking)' : '' ?></h3>
                 </div>
                 <div class="scorecard-header">
@@ -868,8 +955,8 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             
                 if(isset($mysql_data_score)) {
                     while($jatuh = mysqli_fetch_array($mysql_data_score)) { ?> 
-                        document.getElementById("peserta_<?= $jatuh['peserta_id'] ?>_a<?= $jatuh['arrow'] ?>_s<?= $jatuh['session'] ?>").value = "<?= $jatuh['score'] ?>";
-                        hitungPerArrow('peserta_<?= $jatuh['peserta_id'] ?>', '<?= $jatuh['arrow'] ?>', '<?= $jatuh['session'] ?>','<?= $show_score_board['jumlah_anak_panah'] ?>')
+                        document.getElementById("peserta_<?= $jatuh['peserta_id'] ?>_s<?= $jatuh['session'] ?>_a<?= $jatuh['arrow'] ?>").value = "<?= $jatuh['score'] ?>";
+                        hitungPerArrow('peserta_<?= $jatuh['peserta_id'] ?>', '<?= $jatuh['session'] ?>','<?= $jatuh['arrow'] ?>','<?= $show_score_board['jumlah_sesi'] ?>')
                     <?php } ?>
                 <?php }
              ?> 
@@ -968,9 +1055,9 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             }
 
 
-            function hitungPerArrow(playerId, arrow, session, totalArrow, el) {
+            function hitungPerArrow(playerId, session, arrow, totalSession, el) {
                 // Ambil semua input dengan id mulai dari playerId
-                let inputs = document.querySelectorAll(`.arrow-input[id^="${playerId}_a${arrow}_s"]`);
+                let inputs = document.querySelectorAll(`.arrow-input[id^="${playerId}_s${session}_a"]`);
                 let ini_session = session;
                 // console.log(playerId);
 
@@ -996,42 +1083,34 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                     total += score;
                 });
 
-                // console.log("Total per session:", total);
-                document.getElementById(`${playerId}_total_a${arrow}`).value = total;
+                console.log(`Total per session (${session}): `, total);
+                document.getElementById(`${playerId}_total_s${session}`).value = total;
                 // document.getElementById(`${playerId}_end_a${arrow}`).value = total;
                 // Total Terakhir
                 let endTotal = 0;
                 
-                for(let arrow_i = 1; arrow_i <= totalArrow; arrow_i++) {
+                for(let session_y = 1; session_y <= totalSession; session_y++) {
                     let EndTotal = 0;
-                    for(let arrow_u = 1; arrow_u <= arrow_i; arrow_u++) {
-                        EndTotal += parseInt(document.getElementById(`${playerId}_total_a${arrow_u}`).value);
+                    for(let session_u = 1; session_u <= session_y; session_u++) {
+                        EndTotal += parseInt(document.getElementById(`${playerId}_total_s${session_u}`).value);
                     }
 
-                    console.log(EndTotal);
+                    // console.log(EndTotal);
                     if(isNaN(EndTotal)) {
-                        document.getElementById(`${playerId}_end_a${arrow_i}`).value = 0;
+                        document.getElementById(`${playerId}_end_s${session_y}`).value = 0;
                     } else {
-                        document.getElementById(`${playerId}_end_a${arrow_i}`).value = EndTotal;
+                        document.getElementById(`${playerId}_end_s${session_y}`).value = EndTotal;
                     }
                 }
-
-                // console.log(total);
-                // if(document.getElementById(`${playerId}_end_a${arrow-1}`) == null) {
-                //     document.getElementById(`${playerId}_end_a${arrow}`).value = total;
-                // } else {
-                //     document.getElementById(`${playerId}_end_a${arrow}`).value = total + parseInt(document.getElementById(`${playerId}_end_a${arrow-1}`).value);
-                //     // breal
-                // }
 
 
                 // Total Keseluruhan
                 let total_keselurahan = 0;
-                for(let arrow_y = 0; arrow_y < totalArrow; arrow_y++) {
-                    if(document.getElementById(`${playerId}_total_a${arrow_y + 1}`).value == "") {
+                for(let session_y = 1; session_y <= totalSession; session_y++) {
+                    if(document.getElementById(`${playerId}_total_s${session_y}`).value == "") {
                         total_keselurahan += 0;  
                     } else {
-                        total_keselurahan += parseInt(document.getElementById(`${playerId}_total_a${arrow_y + 1}`).value);
+                        total_keselurahan += parseInt(document.getElementById(`${playerId}_total_s${session_y}`).value);
                     }
                 }
 
@@ -1088,56 +1167,78 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                         <input type="text" 
                                class="arrow-input" 
                                <?= (isset($_GET['rangking'])) ? 'disabled' : '' ?>
-                               id="${playerId}_a${arrow + 1}_s${session}"
+                               id="${playerId}_s${session}_a${arrow + 1}"
                                placeholder="${arrow + 1}"
-                               oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${arrow + 1}', '${session}','${jumlahPanah}', this)">
+                               oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${session}', '${arrow + 1}','${jumlahSesi}', this)">
                     `).join('');
                     
                     sessionsHtml += `
                         <div class="session-card">
-                            <div class="session-header">S${session}</div>
-                            <div class="arrows-container" id="${playerId}_session_${session}">
-                                ${arrowsHtml}
+                            <div>
+                                <div class="session-header">S${session}</div>
+                                <div class="arrows-container" id="${playerId}_session_${session}">
+                                    ${arrowsHtml}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="session-header">Total S${session}</div>
+                                <div class="arrows-container" id="${playerId}_session_${session}">
+                                    <input type="text" 
+                                            class="arrow-input" 
+                                            id="${playerId}_total_s${session}"
+                                            placeholder="S${session}"
+                                            readonly>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="session-header">End S${session}</div>
+                                <div class="arrows-container" id="${playerId}_session_${session}">
+                                    <input type="text" 
+                                            class="arrow-input" 
+                                            id="${playerId}_end_s${session}"
+                                            placeholder="S${session}"
+                                            readonly>
+                                </div>
                             </div>
                         </div>
                     `;
                             // <div class="session-total" id="${playerId}_total_s${session}">Total: 0</div>
 
                 }
+                
 
-                const arrowsHtmlTotal = Array.from({length: jumlahPanah}, (_, arrow) => `
-                    <input type="text" 
-                            class="arrow-input" 
-                            id="${playerId}_total_a${arrow + 1}"
-                            placeholder="${arrow + 1}"
-                            readonly>
-                `).join('');
-            
-                sessionsHtml += `
-                    <div class="session-card">
-                        <div class="session-header">Total</div>
-                        <div class="arrows-container" id="${playerId}_session_total">
-                            ${arrowsHtmlTotal}
-                        </div>
-                    </div>
-                `;
+                // const arrowsHtmlTotal = Array.from({length: jumlahPanah}, (_, arrow) => `
+                //     <input type="text" 
+                //             class="arrow-input" 
+                //             id="${playerId}_total_a${arrow + 1}"
+                //             placeholder="${arrow + 1}"
+                //             readonly>
+                // `).join('');
+                // sessionsHtml += `
+                //     <div class="session-card">
+                //         <div class="session-header">Total</div>
+                //         <div class="arrows-container" id="${playerId}_session_total">
+                //             ${arrowsHtmlTotal}
+                //         </div>
+                //     </div>
+                // `;
 
-                const arrowsHtmlEnd = Array.from({length: jumlahPanah}, (_, arrow) => `
-                    <input type="text" 
-                            class="arrow-input" 
-                            id="${playerId}_end_a${arrow + 1}"
-                            placeholder="${arrow + 1}"
-                            readonly>
-                `).join('');
+                // const arrowsHtmlEnd = Array.from({length: jumlahPanah}, (_, arrow) => `
+                //     <input type="text" 
+                //             class="arrow-input" 
+                //             id="${playerId}_end_a${arrow + 1}"
+                //             placeholder="${arrow + 1}"
+                //             readonly>
+                // `).join('');
             
-                sessionsHtml += `
-                    <div class="session-card">
-                        <div class="session-header">End</div>
-                        <div class="arrows-container" id="${playerId}_session_end">
-                            ${arrowsHtmlEnd}
-                        </div>
-                    </div>
-                `;
+                // sessionsHtml += `
+                //     <div class="session-card">
+                //         <div class="session-header">End</div>
+                //         <div class="arrows-container" id="${playerId}_session_end">
+                //             ${arrowsHtmlEnd}
+                //         </div>
+                //     </div>
+                // `;
 
                 return sessionsHtml;
             }
