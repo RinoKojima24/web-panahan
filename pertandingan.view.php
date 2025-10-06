@@ -6,6 +6,12 @@ if (!file_exists('panggil.php')) {
 
 include 'panggil.php';
 
+
+if($_SESSION['role']  != 'admin') {
+    header('Location: kegiatan.view.php');
+    exit;
+}
+
 // Check if database connection is properly established
 // Assuming your panggil.php uses $conn or $connection variable
 if (!isset($conn) && !isset($connection)) {

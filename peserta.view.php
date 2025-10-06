@@ -1,6 +1,9 @@
 <?php
 include 'panggil.php';
-
+if($_SESSION['role']  != 'admin') {
+    header('Location: kegiatan.view.php');
+    exit;
+}
 // Handle export to Excel
 if (isset($_GET['export']) && $_GET['export'] == 'excel') {
     // Set headers untuk download Excel
@@ -120,6 +123,11 @@ if (isset($_GET['export']) && $_GET['export'] == 'excel') {
     }
     echo "</table>";
     exit();
+}
+
+if(isset($_GET['hapus_peserta'])) {
+    $delete_score_board = mysqli_query($conn,'DELETE FROM `peserta` WHERE id ='.$_GET['hapus_peserta']);
+    header("Location: peserta.view.php");
 }
 
 // --- Ambil kategori untuk dropdown ---
@@ -733,10 +741,10 @@ while ($row = $result->fetch_assoc()) {
                             </td>
                             <td class="small-text"><?= $umur ?></td>
                             <td>
-                                <span class="badge badge-gender <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'bg-primary' : 'bg-danger' ?>">
+                                <!-- <span class="badge badge-gender <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'bg-primary' : 'bg-danger' ?>">
                                     <i class="fas <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'fa-mars' : 'fa-venus' ?> me-1"></i>
-                                    <?= htmlspecialchars($p['jenis_kelamin']) ?>
-                                </span>
+                                    <?= "-" // htmlspecialchars($p['jenis_kelamin']) ?>
+                                </span> -->
                             </td>
                             <td class="small-text"><?= htmlspecialchars($p['asal_kota'] ?? '-') ?></td>
                             <td class="small-text text-truncate-custom" title="<?= htmlspecialchars($p['nama_club'] ?? '') ?>">
@@ -768,6 +776,7 @@ while ($row = $result->fetch_assoc()) {
                                         <br>
                                     </small>
                                 <?php endif; ?>
+                                <a style="color : red; text-decoration : none;" onclick="delete_peserta('peserta.view.php?hapus_peserta=<?=$p['id']?>')">Hapus Data</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -815,6 +824,12 @@ document.querySelectorAll('select[name="category_id"], select[name="kegiatan_id"
         this.form.submit();
     });
 });
+
+function delete_peserta(url) {
+    if(confirm("Apakah anda yakin akan menghapus data ini?")) {
+        window.location.href = url;
+    }
+}
 
 // Tooltip untuk teks yang terpotong
 var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'))

@@ -8,6 +8,11 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+if (!isset($_SESSION['login']) && $_SESSION['login'] != true) {
+    header('Location: /');
+    exit;
+}
+
 // Cek apakah ini request untuk scorecard setup
 if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     // Include file koneksi database
@@ -72,24 +77,36 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     $pesertaList = [];
     $peserta_score = [];
     try {
-        $queryPeserta = "
-            SELECT 
-                p.id,
-                p.nama_peserta,
-                p.jenis_kelamin,
-                c.name as category_name
-            FROM peserta p
-            LEFT JOIN categories c ON p.category_id = c.id
-            WHERE p.kegiatan_id = ? AND p.category_id = ?
-            ORDER BY p.nama_peserta ASC
-        ";
+        // $queryPeserta = "
+        //     SELECT 
+        //         p.id,
+        //         p.nama_peserta,
+        //         p.jenis_kelamin,
+        //         c.name as category_name
+        //     FROM peserta p
+        //     LEFT JOIN categories c ON p.category_id = c.id
+        //     WHERE p.kegiatan_id = ? AND p.category_id = ?
+        //     ORDER BY p.nama_peserta ASC
+        // ";
+
+        $queryPeserta = "SELECT c.name AS category_name, CAST(p.id AS UNSIGNED) AS id, pr.status AS status, p.jenis_kelamin AS jenis_kelamin, p.nama_peserta AS nama_peserta FROM `peserta_rounds` AS pr LEFT JOIN peserta AS p ON p.id = pr.peserta_id LEFT JOIN categories AS c ON p.category_id = c.id WHERE pr.score_board_id = ?";
+
         $stmtPeserta = $conn->prepare($queryPeserta);
-        $stmtPeserta->bind_param("ii", $kegiatan_id, $category_id);
+        $stmtPeserta->bind_param("i", $_GET['scoreboard']);
         $stmtPeserta->execute();
         $resultPeserta = $stmtPeserta->get_result();
         
         while ($row = $resultPeserta->fetch_assoc()) {
             $pesertaList[] = $row;
+            if(isset($_GET['scoreboard'])) {
+                $mysql_score_total = mysqli_query($conn, "SELECT * FROM score WHERE kegiatan_id=".$kegiatan_id." AND category_id=".$category_id." AND score_board_id =".$_GET['scoreboard']." AND peserta_id=".$row['id']);
+                if(mysqli_fetch_row($mysql_score_total) == 0) {
+                    $score = mysqli_query($conn,"INSERT INTO `score` 
+                                                        (`kegiatan_id`, `category_id`, `score_board_id`, `peserta_id`, `arrow`, `session`, `score`) 
+                                                        VALUES 
+                                                        ('".$kegiatan_id."', '".$category_id."', '".$_GET['scoreboard']."', '".$row['id']."', '1','1','0');");
+                }
+            }
         }
 
         if(isset($_GET['scoreboard'])) {
@@ -117,11 +134,108 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     }
 
     if(isset($_POST['create'])) {
-        $create_score_board = mysqli_query($conn,"INSERT INTO `score_boards` 
-                                                    (`kegiatan_id`, `category_id`, `jumlah_sesi`, `jumlah_anak_panah`, `created`) 
-                                                    VALUES 
-                                                    ('".$kegiatan_id."', '".$category_id."', '".$_POST['jumlahSesi']."', '".$_POST['jumlahPanah']."', '".$_POST['local_time']."');");
+
+        if($_POST['score_board_id'] == "") {
+            $create_score_board = mysqli_query($conn,"INSERT INTO `score_boards` 
+                                                        (`kegiatan_id`, `category_id`, `jumlah_sesi`, `jumlah_anak_panah`, `created`, `nama`) 
+                                                        VALUES 
+                                                        ('".$kegiatan_id."', '".$category_id."', '".$_POST['jumlahSesi']."', '".$_POST['jumlahPanah']."', '".$_POST['local_time']."', '".$_POST['nama']."');");
+            
+            if ($create_score_board) {
+                $last_id = mysqli_insert_id($conn);
+                $queryPeserta = mysqli_query($conn, "
+                    SELECT 
+                        p.id,
+                        p.nama_peserta,
+                        p.jenis_kelamin,
+                        c.name as category_name
+                    FROM peserta p
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE p.kegiatan_id = ".$kegiatan_id." AND p.category_id = '".$category_id."'
+                    ORDER BY p.nama_peserta ASC
+                ");
+                $peserta = [];
+                while ($ac = mysqli_fetch_assoc($queryPeserta)) {
+                    $peserta[] = $ac['id']; // ambil hanya id
+                }
+
+                $hasilUrutan = [];
+                $left = 0;
+                $right = count($peserta) - 1;
+
+                while ($left <= $right) {
+                    // ambil dari kiri
+                    $hasilUrutan[] = $peserta[$left];
+                    $left++;
+
+                    // ambil dari kanan (jika masih ada)
+                    if ($left <= $right) {
+                        $hasilUrutan[] = $peserta[$right];
+                        $right--;
+                    }
+                }
+
+                // sekarang insert sesuai urutan
+                foreach ($hasilUrutan as $id) {
+                    mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) 
+                                        VALUES ('".$id."', '".$last_id."', NULL)");
+                }
+
+                // if (count($peserta) > 0) {
+                //     // Data pertama
+                //     $first = $peserta[0];
+                //     mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) 
+                //                         VALUES ('".$first['id']."', '".$last_id."', NULL)");
+
+                //     // Data terakhir
+                //     if (count($peserta) > 1) {
+                //         $last = $peserta[count($peserta)-1];
+                //         mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) 
+                //                             VALUES ('".$last['id']."', '".$last_id."', NULL)");
+                //     }
+                // }
+
+                // while($ac = mysqli_fetch_array($queryPeserta)) {
+                //     $AddPesertaRoundQuery = mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) VALUES ('".$ac['id']."', '".$last_id."', NULL)");
+                // }   
+            }
+        } else {
+            $scoreboardshow = mysqli_query($conn, "SELECT * FROM score_boards WHERE id = ".$_POST['score_board_id']);
+            $scoreboardfirst = mysqli_fetch_assoc($scoreboardshow);
+
+            $create_score_board = mysqli_query($conn,"INSERT INTO `score_boards` 
+                                            (`kegiatan_id`, `category_id`, `jumlah_sesi`, `jumlah_anak_panah`, `created`, `nama`) 
+                                            VALUES 
+                                            ('".$kegiatan_id."', '".$category_id."', '".$scoreboardfirst['jumlah_sesi']."', '".$scoreboardfirst['jumlah_anak_panah']."', '".$_POST['local_time']."', '".$_POST['nama']."');");
+            if ($create_score_board) {
+                $last_id = mysqli_insert_id($conn);
+                $copy_peserta_query = mysqli_query($conn, "SELECT * FROM peserta_rounds WHERE score_board_id = ".$_POST['score_board_id']." AND status = 1"); 
+                while($cp = mysqli_fetch_array($copy_peserta_query)) {
+                    mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) 
+                        VALUES ('".$cp['peserta_id']."', '".$last_id."', NULL)");
+                }
+            }
+
+        }
+
+
+
+
         header("Location: detail.php?action=scorecard&resource=index&kegiatan_id=".$kegiatan_id."&category_id=".$category_id);
+    }
+
+    if(isset($_POST['save_status'])) {
+        header("Content-Type: application/json; charset=UTF-8");
+
+        // $save_status_peserta = mysqli_query($conn, "UPDATE peserta_rounds SET status='".$_POST['status']."' WHERE score_board_id='".$_POST['score_board_id']."' AND peserta_id='".$_POST['peserta_id']."'  ");
+        $save_status_peserta = mysqli_query($conn, "UPDATE peserta_rounds SET status='".$_POST['status']."' WHERE score_board_id='".$_POST['score_board_id']."' AND peserta_id='".$_POST['peserta_id']."'");
+
+
+        echo json_encode([
+            "status" => "success",
+            "message" => $_POST['peserta_id']
+        ]);
+        exit;
     }
 
     if(isset($_POST['save_score'])) {
@@ -173,6 +287,57 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
     if(isset($_GET['scoreboard'])) { 
         $sql_show_score_board = mysqli_query($conn,'SELECT * FROM `score_boards` WHERE `score_boards`.`id` ='.$_GET['scoreboard']);
         $show_score_board = mysqli_fetch_assoc($sql_show_score_board);
+
+        if($show_score_board['score_board_id'] == null) {
+            $check_peserta_round = mysqli_fetch_row(mysqli_query($conn, "SELECT * FROM peserta_rounds WHERE score_board_id =".$_GET['scoreboard']));
+            if($check_peserta_round <= 0) {
+                $queryPeserta = mysqli_query($conn, "
+                    SELECT 
+                        p.id,
+                        p.nama_peserta,
+                        p.jenis_kelamin,
+                        c.name as category_name
+                    FROM peserta p
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE p.kegiatan_id = ".$kegiatan_id." AND p.category_id = '".$category_id."'
+                    ORDER BY p.nama_peserta ASC
+                ");
+                $peserta = [];
+                while ($ac = mysqli_fetch_assoc($queryPeserta)) {
+                    $peserta[] = $ac['id']; // ambil hanya id
+                }
+
+                $hasilUrutan = [];
+                $left = 0;
+                $right = count($peserta) - 1;
+
+                while ($left <= $right) {
+                    // ambil dari kiri
+                    $hasilUrutan[] = $peserta[$left];
+                    $left++;
+
+                    // ambil dari kanan (jika masih ada)
+                    if ($left <= $right) {
+                        $hasilUrutan[] = $peserta[$right];
+                        $right--;
+                    }
+                }
+
+                // sekarang insert sesuai urutan
+                foreach ($hasilUrutan as $id) {
+                    mysqli_query($conn, "INSERT INTO `peserta_rounds` (`peserta_id`, `score_board_id`, `status`) 
+                                        VALUES ('".$id."', '".$_GET['scoreboard']."', NULL)");
+                }
+            }
+        }
+
+        $peserta_round = mysqli_query($conn, "SELECT c.name AS category_name, CAST(p.id AS UNSIGNED) AS id, pr.status AS status, p.jenis_kelamin AS jenis_kelamin, p.nama_peserta AS nama_peserta FROM `peserta_rounds` AS pr LEFT JOIN peserta AS p ON p.id = pr.peserta_id LEFT JOIN categories AS c ON p.category_id = c.id WHERE pr.score_board_id = ".$_GET['scoreboard']);
+        $peserta_Round_List = [];
+        while($pr = mysqli_fetch_assoc($peserta_round)) {
+            $pr['id'] = (int)$pr['id']; 
+            $peserta_Round_List[] = $pr;
+        }
+
     }
 
     // Tutup koneksi database
@@ -427,6 +592,8 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 padding: 15px;
                 border-radius: 12px;
                 box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
+                  /* display: flex;
+  justify-content: space-between; */
             }
 
             /* Score Table */
@@ -493,7 +660,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 text-align: center;
                 font-size: 14px;
                 font-weight: 600;
-                color: white;
+                color: #333;
                 transition: all 0.3s ease;
                 box-sizing: border-box;
             }
@@ -506,7 +673,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             .arrow-input:focus {
                 outline: none;
                 background: white;
-                color:black;
                 border-color: #4facfe;
                 box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
             }
@@ -688,16 +854,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 margin: 0;
                 color: white;
             }
-.session-card {
-  display: flex;
-  justify-content: flex-start; /* semua kumpul di kiri */
-  gap: 2px;                   /* jarak antar kolom */
-  margin-bottom: 20px;
-}
-
-.session-card > div {
-  min-width: 150px; /* biar ukurannya konsisten */
-}
 
             /* Responsive adjustments */
             @media (max-width: 768px) {
@@ -795,22 +951,40 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                                     Silakan pastikan ada peserta yang mendaftar terlebih dahulu.
                                 </div>
                             <?php endif; ?>
-
                             <div class="form-group">
-                                <label class="form-label">Jumlah Sesi</label>
-                                <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" value="9" placeholder="9">
+                                <label class="form-label">Nama Round</label>
+                                <input type="text" class="form-input" name="nama" id="nama" placeholder="Nama Round">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">Jumlah Anak Panah per Sesi</label>
-                                <input type="number" class="form-input" name="jumlahPanah" id="jumlahPanah" min="1"  value="3" placeholder="3">
+                                <label class="form-label">Round Lanjutan</label>
+                                <select name="score_board_id" class="form-input" id="select_score_board_id">
+                                    <option value="">Buat Round Baru</option>
+                                    <?php while($a = mysqli_fetch_array($mysql_table_score_board)) { ?>
+                                        <option value="<?= $a['id'] ?>"><?= $a['nama'] ?></option>
+                                    <?php } ?>
+                                </select>
+                                <!--  -->
+                                <!-- <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" value="9" placeholder="9"> -->
+                            </div>
+
+                            <div id="jumlah_form">
+                                <div class="form-group">
+                                    <label class="form-label">Jumlah Sesi</label>
+                                    <input type="number" class="form-input" name="jumlahSesi" id="jumlahSesi" min="1" value="9" placeholder="9">
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label">Jumlah Anak Panah per Sesi</label>
+                                    <input type="number" class="form-input" name="jumlahPanah" id="jumlahPanah" min="1"  value="3" placeholder="3">
+                                </div>
                             </div>
 
                             <!-- <button class="create-btn" onclick="createScorecard()" >
-                                Buat Scorecard
+                                Buat Scorecard onclick="createScorecard()"
                             </button> -->
 
-                            <button type="submit" name="create" class="create-btn" <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
+                            <button type="submit" name="create" class="create-btn"  <?= count($pesertaList) == 0 ? 'disabled' : '' ?>>
                                 Buat Scorecard
                             </button>
                         </div>
@@ -819,14 +993,18 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 <?php if($_GET['resource'] == 'index') { ?>
                     <div class="setup-form" id="setupForm">
                         <div class="header-bar">
-                            <button class="back-btn" onclick="goBack()">←</button>
-                            <a href="detail.php?action=scorecard&resource=form&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Tambah data +</a>
+                            <a class="back-btn" href="detail.php?id=<?= $kegiatan_id ?>&filter_kategori=<?= $category_id ?>">←</a>
+                            <div>
+                                <a href="score_akar.php?kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Score Akar =</a>
+                                <a href="detail.php?action=scorecard&resource=form&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>" class="add-link">Tambah data +</a>
+                            </div>
                         </div>
                         <div class="table-wrapper">
                             <table class="styled-table">
                                 <thead>
                                     <tr>
                                         <th>No</th>
+                                        <th>Nama</th>
                                         <th>Tanggal</th>
                                         <th>Jumlah Sesi</th>
                                         <th>Jumlah Anak Panah</th>
@@ -839,10 +1017,12 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                                         while($a = mysqli_fetch_array($mysql_table_score_board)) { ?>
                                             <tr>
                                                 <td><?= $loopNumber++ ?></td>
+                                                <td><?= $a['nama'] ?></td>
                                                 <td><?= $a['created'] ?></td>
                                                 <td><?= $a['jumlah_sesi'] ?></td>
                                                 <td><?= $a['jumlah_anak_panah'] ?></td>
                                                 <td>
+                                                    <a href="excel_score.php?kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>">Export</a>
                                                     <a href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>&rangking=true">Ranking</a>
                                                     <a href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>&scoreboard=<?= $a['id'] ?>">Detail</a>
                                                     <!-- <button onclick="createScorecard('<?= $kegiatan_id ?>', '<?= $category_id ?>', '<?= $a['id'] ?>')">Hapus</button> -->
@@ -861,7 +1041,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             <div class="scorecard-container" id="scorecardContainer">
                 <div class="header-flex">
                     <a  class="back-btn" href="detail.php?action=scorecard&resource=index&kegiatan_id=<?= $kegiatan_id ?>&category_id=<?= $category_id ?>">←</a>
-                    <h3>Score Board <?= (isset($_GET['rangking'])) ? '(Ranking)' : '' ?></h3>
+                    <h3>Score Board | <?= $show_score_board['nama'] ?> <?= (isset($_GET['rangking'])) ? '(Ranking)' : '' ?></h3>
                 </div>
                 <div class="scorecard-header">
                     <div class="category-header-info">
@@ -890,7 +1070,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                 <div class="scorecard-title">Informasi Skor</div>
 
                 <!-- Dynamic player sections will be generated here -->
-                <div id="playersContainer">
+                <div id="playersContainer"> 
                     <!-- Player sections akan dimuat di sini oleh JavaScript -->
                 </div>
 
@@ -916,11 +1096,31 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
 
                 document.getElementById("local_time").value = formatted;
             <?php } ?>
+
+            <?php if($_GET['resource'] == "form") { ?>
+                const select_score_board_id = document.getElementById("select_score_board_id");
+
+                // Event listener untuk change
+                select_score_board_id.addEventListener("change", function () {
+                    // console.log("Value baru:", this.value);
+                    if(this.value == "") {
+                        document.getElementById("jumlah_form").style.display = "block";
+                    } else {
+                        document.getElementById("jumlah_form").style.display = "none";
+                    }
+                });
+            <?php } ?>
+
             // rangking
-            const pesertaData = <?= json_encode($pesertaList) ?>;
+            <?php if(isset($_GET['scoreboard'])) { ?>
+                const pesertaData = <?= json_encode($peserta_Round_List) ?>;
+            <?php } else { ?>
+                const pesertaData = <?= json_encode($pesertaList) ?>;
+            <?php } ?>
+            // console.log(pesertaData);
             <?php if(isset($_GET['rangking'])) { ?>
                 const peserta_score = <?= json_encode($peserta_score) ?>;
-                console.log(peserta_score);
+                // console.log(peserta_score);
                 function tambahAtributById(id, key, value) {
                     const peserta = pesertaData.find(p => p.id === id);
                     if (peserta) {
@@ -939,6 +1139,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                     }
                     return b.x_score - a.x_score; // kalau sama, urut x_score
                 });
+                // console.log(pesertaData);
 
             <?php } ?>
             // console.log(pesertaData);
@@ -955,8 +1156,10 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             
                 if(isset($mysql_data_score)) {
                     while($jatuh = mysqli_fetch_array($mysql_data_score)) { ?> 
-                        document.getElementById("peserta_<?= $jatuh['peserta_id'] ?>_s<?= $jatuh['session'] ?>_a<?= $jatuh['arrow'] ?>").value = "<?= $jatuh['score'] ?>";
-                        hitungPerArrow('peserta_<?= $jatuh['peserta_id'] ?>', '<?= $jatuh['session'] ?>','<?= $jatuh['arrow'] ?>','<?= $show_score_board['jumlah_sesi'] ?>')
+                        console.log(<?= $jatuh['peserta_id'] ?>);
+                        
+                        document.getElementById("peserta_<?= $jatuh['peserta_id'] ?>_a<?= $jatuh['arrow'] ?>_s<?= $jatuh['session'] ?>").value = "<?= $jatuh['score'] ?>";
+                        hitungPerArrow('peserta_<?= $jatuh['peserta_id'] ?>', '<?= $jatuh['arrow'] ?>', '<?= $jatuh['session'] ?>','<?= $show_score_board['jumlah_anak_panah'] ?>')
                     <?php } ?>
                 <?php }
              ?> 
@@ -1018,134 +1221,245 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
             }
 
             function generatePlayerSections(jumlahSesi, jumlahPanah) {
-                const playersContainer = document.getElementById('playersContainer');
-                playersContainer.innerHTML = '';
+    const playersContainer = document.getElementById('playersContainer');
+    playersContainer.innerHTML = '';
 
-                // Generate section untuk setiap peserta
-                pesertaData.forEach((peserta, index) => {
-                    const playerId = `peserta_${peserta.id}`;
-                    const playerName = peserta.nama_peserta;
-                    
-                    const playerSection = document.createElement('div');
-                    playerSection.className = 'player-section';
-                    playerSection.innerHTML = `
-                        <div class="player-header">
-                            ${playerName} (${peserta.jenis_kelamin}) <?= isset($_GET['rangking']) ? 'Juara ${index + 1}'  : ''  ?>
-                        </div>
-                        <div class="sessions-container" id="${playerId}_sessions">
-                            ${generateSessionCards(playerId, jumlahSesi, jumlahPanah)}
-                        </div>
-                        <div class="total-summary" id="${playerId}_summary">
-                            <div style="font-size: 14px; margin-bottom: 8px;">Total Keseluruhan</div>
-                            <div class="grand-total" id="${playerId}_grand_total">0 poin</div>
-                        </div>
-                    `;
-                    
-                    playersContainer.appendChild(playerSection);
-                });
+    // Generate section untuk setiap peserta
+    pesertaData.forEach((peserta, index) => {
+        const playerId = `peserta_${peserta.id}`;
+        const playerName = peserta.nama_peserta;
+        
+        const playerSection = document.createElement('div');
+        playerSection.className = 'player-section';
+        playerSection.innerHTML = `
+            <div class="player-header">
+                <span>${playerName} (${peserta.jenis_kelamin ?? '-'}) ${typeof peserta.total_score !== 'undefined' ? ` - Juara ${index + 1}` : ''}</span>
+                <br>
+                <select id="status_${peserta.id}" onchange="ubah_status(${peserta.id})"  ${typeof peserta.total_score !== 'undefined' ? `disabled` : ''} >
+                    <option value="">Pilih Status Pemenang</option>
+                    <option value="1" ${peserta.status == "1" ? 'selected' : ''}>Menang</option>
+                    <option value="0"${peserta.status == "0" ? 'selected' : ''}>Kalah</option>
+                </select>
+            </div>
+            <div class="score-table-container">
+                <table class="score-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="width: 60px;">Sesi</th>
+                            <th colspan="${jumlahPanah}">Anak Panah</th>
+                            <th rowspan="2" style="width: 60px;">Total</th>
+                            <th rowspan="2" style="width: 60px;">End</th>
+                        </tr>
+                        <tr>
+                            ${Array.from({length: jumlahPanah}, (_, i) => `<th style="width: 50px;">${i + 1}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${generateTableRows(playerId, jumlahSesi, jumlahPanah)}
+                    </tbody>
+                </table>
+            </div>
+            <div class="total-summary" id="${playerId}_summary">
+                <div style="font-size: 14px; margin-bottom: 8px;">Total Keseluruhan</div>
+                <div class="grand-total" id="${playerId}_grand_total">0 poin</div>
+                ${typeof peserta.x_score !== 'undefined' ? `<div class="x-count">X Score: ${peserta.x_score}</div>` : ''}
+            </div>
+        `;
+        
+        playersContainer.appendChild(playerSection);
+    });
+}
+
+function generateTableRows(playerId, jumlahSesi, jumlahPanah) {
+    let rowsHtml = '';
+    
+    // Generate rows untuk setiap sesi
+    for (let session = 1; session <= jumlahSesi; session++) {
+        const arrowInputs = Array.from({length: jumlahPanah}, (_, arrow) => `
+            <td>
+                <input type="text" 
+                       class="arrow-input" 
+                       <?= (isset($_GET['rangking'])) ? 'disabled' : '' ?>
+                       id="${playerId}_a${arrow + 1}_s${session}"
+                       placeholder=""
+                       oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${arrow + 1}', '${session}','${jumlahPanah}', this)">
+            </td>
+        `).join('');
+        
+        rowsHtml += `
+            <tr class="session-row">
+                <td class="session-label">S${session}</td>
+                ${arrowInputs}
+                <td class="total-cell">
+                    <input type="text" 
+                           class="arrow-input" 
+                           id="${playerId}_total_a${session}"
+                           readonly
+                           style="background: rgba(253, 203, 110, 0.1); border-color: #e17055;">
+                </td>
+                <td class="end-cell">
+                    <input type="text" 
+                           class="arrow-input" 
+                           id="${playerId}_end_a${session}"
+                           readonly
+                           style="background: rgba(0, 184, 148, 0.1); border-color: #00b894;">
+                </td>
+            </tr>
+        `;
+    }
+    
+    return rowsHtml;
+}
+
+// Update function hitungPerArrow untuk bekerja dengan table structure yang benar
+function hitungPerArrow(playerId, arrow, session, totalArrow, el) {
+    // Hitung total untuk sesi ini
+    let sessionTotal = 0;
+    
+    // Loop melalui semua arrow dalam sesi ini
+    for(let a = 1; a <= totalArrow; a++) {
+        const input = document.getElementById(`${playerId}_a${a}_s${session}`);
+        if(input && input.value) {
+            let val = input.value.trim().toLowerCase();
+            let score = 0;
+            if (val === "x") {
+                score = 10;
+            } else if (val === "m") {
+                score = 0;
+            } else if (!isNaN(val) && val !== "") {
+                score = parseInt(val);
             }
-
-            function validateArrowInput(el) {
-                let val = el.value.trim().toLowerCase();
-
-                // hanya boleh angka 0–10, huruf x, atau m
-                if (!/^(10|[0-9]|x|m)?$/i.test(val)) {
-                    el.value = ""; // reset kalau tidak valid
-                }
+            sessionTotal += score;
+        }
+    }
+    
+    // Update total untuk sesi ini
+    const totalInput = document.getElementById(`${playerId}_total_a${session}`);
+    if(totalInput) {
+        totalInput.value = sessionTotal;
+    }
+    
+    // Hitung dan update End (running total) untuk semua sesi yang ada
+    let maxSession = 20; // Asumsi maksimal 20 sesi
+    let runningTotal = 0;
+    
+    for(let s = 1; s <= maxSession; s++) {
+        const sessionTotalInput = document.getElementById(`${playerId}_total_a${s}`);
+        const sessionEndInput = document.getElementById(`${playerId}_end_a${s}`);
+        
+        if(sessionTotalInput && sessionEndInput) {
+            // Tambahkan total sesi ini ke running total
+            if(sessionTotalInput.value && sessionTotalInput.value !== '') {
+                runningTotal += parseInt(sessionTotalInput.value) || 0;
             }
+            // Update End value
+            sessionEndInput.value = runningTotal;
+        } else {
+            // Tidak ada sesi selanjutnya, keluar dari loop
+            break;
+        }
+    }
+    
+    // Update grand total dengan running total terakhir
+    const grandTotalElement = document.getElementById(`${playerId}_grand_total`);
+    if(grandTotalElement) {
+        grandTotalElement.innerText = runningTotal + " poin";
+    }
+    
+    // Save to database if element provided
+    if(el != null) {
+        let arr_playerID = playerId.split("_");
+        let nama = "Marsha and The Bear";
+        
+        fetch("", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: "save_score=1" +
+                "&nama=" + encodeURIComponent(nama) +
+                "&peserta_id=" + encodeURIComponent(arr_playerID[1]) +
+                "&arrow=" + encodeURIComponent(arrow) +
+                "&session=" + encodeURIComponent(session) + 
+                "&score=" + encodeURIComponent(document.getElementById(el.id).value)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Score saved: " + data.message);
+        })
+        .catch(err => console.error(err));
+    }
+    
+    return 0;
+}
 
+function ubah_status(id) {   
+    // console.log(document.getElementById('status_' + id).value);
+    // console.log(id);
+    // console.log("<?= (isset($_GET['scoreboard'])) ? $_GET['scoreboard'] : '' ?>");     
+    fetch("", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: "save_status=1" +
+            "&status=" + encodeURIComponent(document.getElementById('status_' + id).value) +
+            "&peserta_id=" + encodeURIComponent(id) +
+            "&score_board_id=" + encodeURIComponent("<?= (isset($_GET['scoreboard'])) ? $_GET['scoreboard'] : '' ?>")
+    })
+    .then(response => response.json())
+    .then(data => {
+        // console.log("Status saved: " + data.message);
+    })
+    .catch(err => console.error(err));
+}
 
-            function hitungPerArrow(playerId, session, arrow, totalSession, el) {
-                // Ambil semua input dengan id mulai dari playerId
-                let inputs = document.querySelectorAll(`.arrow-input[id^="${playerId}_s${session}_a"]`);
-                let ini_session = session;
-                // console.log(playerId);
+function validateArrowInput(el) {
+    let val = el.value.trim().toLowerCase();
 
-                let hasil = {}; 
+    // hanya boleh angka 0–10, huruf x, atau m
+    if (!/^(10|[0-9]|x|m)?$/i.test(val)) {
+        el.value = ""; // reset kalau tidak valid
+        return;
+    }
+    
+    // Apply visual styling based on value
+    if (val === 'x' || val === 'X') {
+        el.style.background = 'rgba(40, 167, 69, 0.1)';
+        el.style.borderColor = '#28a745';
+        el.style.color = '#28a745';
+        el.style.fontWeight = '700';
+    } else if (val === 'm' || val === 'M') {
+        el.style.background = 'rgba(220, 53, 69, 0.1)';
+        el.style.borderColor = '#dc3545';
+        el.style.color = '#dc3545';
+        el.style.fontWeight = '700';
+    } else if (val === '10') {
+        el.style.background = 'rgba(40, 167, 69, 0.1)';
+        el.style.borderColor = '#28a745';
+        el.style.color = '#28a745';
+        el.style.fontWeight = '700';
+    } else if (val === '9' || val === '8') {
+        el.style.background = 'rgba(255, 193, 7, 0.1)';
+        el.style.borderColor = '#ffc107';
+        el.style.color = '#856404';
+        el.style.fontWeight = '600';
+    } else {
+        // Reset styling for other values
+        el.style.background = 'transparent';
+        el.style.borderColor = 'transparent';
+        el.style.color = '#333';
+        el.style.fontWeight = '600';
+    }
+}
 
-                let total = 0;
-
-                inputs.forEach(input => {
-                    let id = input.id; 
-
-                    let val = input.value.trim().toLowerCase();
-
-                    // // Konversi nilai ke angka
-                    let score = 0;
-                    if (val === "x") {
-                        score = 10;
-                    } else if (val === "m") {
-                        score = 0;
-                    } else if (!isNaN(val) && val !== "") {
-                        score = parseInt(val);
-                    }
-
-                    total += score;
-                });
-
-                console.log(`Total per session (${session}): `, total);
-                document.getElementById(`${playerId}_total_s${session}`).value = total;
-                // document.getElementById(`${playerId}_end_a${arrow}`).value = total;
-                // Total Terakhir
-                let endTotal = 0;
-                
-                for(let session_y = 1; session_y <= totalSession; session_y++) {
-                    let EndTotal = 0;
-                    for(let session_u = 1; session_u <= session_y; session_u++) {
-                        EndTotal += parseInt(document.getElementById(`${playerId}_total_s${session_u}`).value);
-                    }
-
-                    // console.log(EndTotal);
-                    if(isNaN(EndTotal)) {
-                        document.getElementById(`${playerId}_end_s${session_y}`).value = 0;
-                    } else {
-                        document.getElementById(`${playerId}_end_s${session_y}`).value = EndTotal;
-                    }
-                }
-
-
-                // Total Keseluruhan
-                let total_keselurahan = 0;
-                for(let session_y = 1; session_y <= totalSession; session_y++) {
-                    if(document.getElementById(`${playerId}_total_s${session_y}`).value == "") {
-                        total_keselurahan += 0;  
-                    } else {
-                        total_keselurahan += parseInt(document.getElementById(`${playerId}_total_s${session_y}`).value);
-                    }
-                }
-
-                let arr_playerID = playerId.split("_");
-  
-                document.getElementById(`${playerId}_grand_total`).innerText = total_keselurahan + " poin";
-
-                if(el != null) {
-                    // console.log(el.id);
-                    let nama = "Marsha and The Bear";
-                    
-
-                    fetch("", { // kosong artinya request ke file ini sendiri
-                        method: "POST",
-                        headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
-                        },
-                        body: "save_score=1" +
-                            "&nama=" + encodeURIComponent(nama) +
-                            "&peserta_id=" + encodeURIComponent(arr_playerID[1]) +
-                            "&arrow=" + encodeURIComponent(arrow) +
-                            "&session=" + encodeURIComponent(ini_session) + 
-                            "&score=" + encodeURIComponent(document.getElementById(el.id).value)
-
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log("Halo, " + data.message);
-                    })
-                    .catch(err => console.error(err));   
-                    // console.log("-");
-                }
-
-                return 0;
-            }
+function editScorecard() {
+    document.getElementById('setupForm').style.display = 'block';
+    document.getElementById('scorecardContainer').style.display = 'none';
+    
+    // Reset container width
+    document.querySelector('.container').style.maxWidth = '500px';
+}
 
 
 
@@ -1167,78 +1481,55 @@ if (isset($_GET['action']) && $_GET['action'] == 'scorecard') {
                         <input type="text" 
                                class="arrow-input" 
                                <?= (isset($_GET['rangking'])) ? 'disabled' : '' ?>
-                               id="${playerId}_s${session}_a${arrow + 1}"
+                               id="${playerId}_a${arrow + 1}_s${session}"
                                placeholder="${arrow + 1}"
-                               oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${session}', '${arrow + 1}','${jumlahSesi}', this)">
+                               oninput="validateArrowInput(this);hitungPerArrow('${playerId}', '${arrow + 1}', '${session}','${jumlahPanah}', this)">
                     `).join('');
                     
                     sessionsHtml += `
                         <div class="session-card">
-                            <div>
-                                <div class="session-header">S${session}</div>
-                                <div class="arrows-container" id="${playerId}_session_${session}">
-                                    ${arrowsHtml}
-                                </div>
-                            </div>
-                            <div>
-                                <div class="session-header">Total S${session}</div>
-                                <div class="arrows-container" id="${playerId}_session_${session}">
-                                    <input type="text" 
-                                            class="arrow-input" 
-                                            id="${playerId}_total_s${session}"
-                                            placeholder="S${session}"
-                                            readonly>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="session-header">End S${session}</div>
-                                <div class="arrows-container" id="${playerId}_session_${session}">
-                                    <input type="text" 
-                                            class="arrow-input" 
-                                            id="${playerId}_end_s${session}"
-                                            placeholder="S${session}"
-                                            readonly>
-                                </div>
+                            <div class="session-header">S${session}</div>
+                            <div class="arrows-container" id="${playerId}_session_${session}">
+                                ${arrowsHtml}
                             </div>
                         </div>
                     `;
                             // <div class="session-total" id="${playerId}_total_s${session}">Total: 0</div>
 
                 }
-                
 
-                // const arrowsHtmlTotal = Array.from({length: jumlahPanah}, (_, arrow) => `
-                //     <input type="text" 
-                //             class="arrow-input" 
-                //             id="${playerId}_total_a${arrow + 1}"
-                //             placeholder="${arrow + 1}"
-                //             readonly>
-                // `).join('');
-                // sessionsHtml += `
-                //     <div class="session-card">
-                //         <div class="session-header">Total</div>
-                //         <div class="arrows-container" id="${playerId}_session_total">
-                //             ${arrowsHtmlTotal}
-                //         </div>
-                //     </div>
-                // `;
+                const arrowsHtmlTotal = Array.from({length: jumlahPanah}, (_, arrow) => `
+                    <input type="text" 
+                            class="arrow-input" 
+                            id="${playerId}_total_a${arrow + 1}"
+                            placeholder="${arrow + 1}"
+                            readonly>
+                `).join('');
+                sessionsHtml += `
+                    <div class="session-card">
+                        <div class="session-header">Total</div>
+                        <div class="arrows-container" id="${playerId}_session_total">
+                            ${arrowsHtmlTotal}
+                        </div>
+                    </div>
+                `;
 
-                // const arrowsHtmlEnd = Array.from({length: jumlahPanah}, (_, arrow) => `
-                //     <input type="text" 
-                //             class="arrow-input" 
-                //             id="${playerId}_end_a${arrow + 1}"
-                //             placeholder="${arrow + 1}"
-                //             readonly>
-                // `).join('');
+                const arrowsHtmlEnd = Array.from({length: jumlahPanah}, (_, arrow) => `
+                    <input type="text" 
+                            class="arrow-input" 
+                            id="${playerId}_end_a${arrow + 1}"
+                            placeholder="${arrow + 1}"
+                            readonly>
+                `).join('');
             
-                // sessionsHtml += `
-                //     <div class="session-card">
-                //         <div class="session-header">End</div>
-                //         <div class="arrows-container" id="${playerId}_session_end">
-                //             ${arrowsHtmlEnd}
-                //         </div>
-                //     </div>
-                // `;
+                sessionsHtml += `
+                    <div class="session-card">
+                        <div class="session-header">End</div>
+                        <div class="arrows-container" id="${playerId}_session_end">
+                            ${arrowsHtmlEnd}
+                        </div>
+                    </div>
+                `;
 
                 return sessionsHtml;
             }
@@ -2443,7 +2734,7 @@ foreach ($pesertaList as $peserta) {
                                     <td>
                                         <a href="tel:<?= htmlspecialchars($peserta['nomor_hp']) ?>" 
                                            style="color: #4facfe; text-decoration: none;">
-                                            <?= htmlspecialchars($peserta['nomor_hp']) ?>
+                                            <?= htmlspecialchars($peserta['nomor_hp'] ?? "") ?>
                                         </a>
                                     </td>
                                     <td>

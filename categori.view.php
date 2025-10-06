@@ -1,6 +1,12 @@
 <?php
 include 'panggil.php';
 
+
+if($_SESSION['role']  != 'admin') {
+    header('Location: kegiatan.view.php');
+    exit;
+}
+
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {

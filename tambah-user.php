@@ -2,6 +2,11 @@
 // Include konfigurasi database
 include "panggil.php";
 
+if($_SESSION['role']  != 'admin') {
+    header('Location: kegiatan.view.php');
+    exit;
+}
+
 // Proses form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = trim($_POST['name']);
@@ -202,8 +207,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </h1>
                         <p class="text-white opacity-75">Isi form dibawah untuk menambahkan user baru ke sistem</p>
                     </div>
-                    <a href="dashboard.php" class="btn btn-back animate-float">
-                        <i class="fas fa-arrow-left me-2"></i>Kembali ke Dashboard
+                    <a href="users.php" class="btn btn-back animate-float">
+                        <i class="fas fa-arrow-left me-2"></i>Kembali ke halaman Users
                     </a>
                 </div>
             </div>

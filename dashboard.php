@@ -8,10 +8,18 @@ if (!isset($_SESSION['login']) || $_SESSION['login'] !== true) {
     exit;
 }
 
+
+
+
 // Ambil data user dari session
 $username = $_SESSION['username'] ?? 'User';
 $name = $_SESSION['name'] ?? $username;
 $role = $_SESSION['role'] ?? 'user';
+
+if($role  != 'admin') {
+    header('Location: kegiatan.view.php');
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

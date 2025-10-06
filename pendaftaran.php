@@ -97,12 +97,12 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nama_peserta = trim($_POST['nama_peserta']);
     $tanggal_lahir = $_POST['tanggal_lahir'];
-    $jenis_kelamin = $_POST['jenis_kelamin'];
-    $asal_kota = trim($_POST['asal_kota']);
-    $nama_club = trim($_POST['nama_club']);
-    $sekolah = trim($_POST['sekolah']);
-    $kelas = trim($_POST['kelas']);
-    $nomor_hp = trim($_POST['nomor_hp']);
+    // $jenis_kelamin = $_POST['jenis_kelamin'];
+    // $asal_kota = trim($_POST['asal_kota']);
+    // $nama_club = trim($_POST['nama_club']);
+    // $sekolah = trim($_POST['sekolah']);
+    // $kelas = trim($_POST['kelas']);
+    // $nomor_hp = trim($_POST['nomor_hp']);
     $category_ids = isset($_POST['category_ids']) ? $_POST['category_ids'] : [];
 
     // Validasi
@@ -116,13 +116,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Tanggal lahir wajib diisi";
     }
     
-    if (empty($jenis_kelamin)) {
-        $errors[] = "Jenis kelamin wajib dipilih";
-    }
+    // if (empty($jenis_kelamin)) {
+    //     $errors[] = "Jenis kelamin wajib dipilih";
+    // }
     
-    if (empty($nomor_hp)) {
-        $errors[] = "Nomor HP wajib diisi";
-    }
+    // if (empty($nomor_hp)) {
+    //     $errors[] = "Nomor HP wajib diisi";
+    // }
     
     if (empty($category_ids)) {
         $errors[] = "Minimal pilih satu kategori";
@@ -685,7 +685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                required>
                     </div>
 
-                    <div class="form-group">
+                    <!-- <div class="form-group">
                         <label>Jenis Kelamin <span class="required">*</span></label>
                         <div class="radio-group">
                             <div class="radio-item">
@@ -695,7 +695,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        value="Laki-laki"
                                        onchange="updateKategoriOptions()"
                                        <?= (isset($_POST['jenis_kelamin']) && $_POST['jenis_kelamin'] == 'Laki-laki') ? 'checked' : ''; ?>
-                                       required>
+                                       >
                                 <label for="laki_laki">Laki-laki</label>
                             </div>
                             <div class="radio-item">
@@ -705,7 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        value="Perempuan"
                                        onchange="updateKategoriOptions()"
                                        <?= (isset($_POST['jenis_kelamin']) && $_POST['jenis_kelamin'] == 'Perempuan') ? 'checked' : ''; ?>
-                                       required>
+                                       >
                                 <label for="perempuan">Perempuan</label>
                             </div>
                         </div>
@@ -719,10 +719,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                class="form-control" 
                                placeholder="08xxxxxxxxxx"
                                value="<?= isset($_POST['nomor_hp']) ? htmlspecialchars($_POST['nomor_hp']) : ''; ?>"
-                               required>
-                    </div>
+                               >
+                    </div> -->
 
-                    <div class="form-group full-width">
+                    <!-- <div class="form-group full-width">
                         <label for="bukti_pembayaran">Bukti Pembayaran</label>
                         <div class="file-input-container">
                             <div class="file-input" onclick="document.getElementById('bukti_pembayaran').click()">
@@ -738,7 +738,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div id="file-preview" class="file-preview"></div>
                         </div>
-                    </div>
+                    </div> -->
 
                     <div class="form-group full-width">
                         <label>Kategori yang Diikuti <span class="required">*</span></label>
@@ -768,7 +768,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <strong>Info:</strong> Anda dapat memilih beberapa kategori sekaligus. Pilih tanggal lahir dan jenis kelamin terlebih dahulu untuk melihat kategori yang sesuai.
                         </div>
                     </div>
-
+                    <!-- 
                     <div class="form-group">
                         <label for="asal_kota">Asal Kota</label>
                         <input type="text" 
@@ -804,7 +804,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                class="form-control" 
                                placeholder="Contoh: XII IPA 1"
                                value="<?= isset($_POST['kelas']) ? htmlspecialchars($_POST['kelas']) : ''; ?>">
-                    </div>
+                    </div> -->
                 </div>
 
                 <div class="btn-container">
