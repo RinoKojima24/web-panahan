@@ -1,5 +1,5 @@
 <?php
-require 'vendor/autoload.php';
+require 'vendor/vendor/autoload.php';
 include 'panggil.php'; 
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;

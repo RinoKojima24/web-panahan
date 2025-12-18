@@ -2,7 +2,7 @@
 // check_access.php
 // File ini digunakan untuk mengecek akses user berdasarkan role
 
-session_start();
+// Tidak perlu session_start() karena sudah ada di panggil.php
 
 // Fungsi untuk cek apakah user sudah login
 function isLoggedIn() {
@@ -14,13 +14,13 @@ function isAdmin() {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }
 
-// Fungsi untuk redirect jika belum login
-function requireLogin() {
-    if (!isLoggedIn()) {
-        header('Location: index.php');
-        exit;
+    // Fungsi untuk redirect jika belum login
+    function requireLogin() {
+        if (!isLoggedIn()) {
+            header('Location: index.php');
+            exit;
+        }
     }
-}
 
 // Fungsi untuk redirect jika bukan admin
 function requireAdmin() {

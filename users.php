@@ -1,5 +1,7 @@
 <?php
 include 'panggil.php';
+include 'check_access.php';
+requireAdmin();
 
 $result = $conn->query("SELECT * FROM users ORDER BY id ASC");
 
@@ -426,6 +428,5 @@ if($_SESSION['role']  != 'admin') {
         });
     });
 </script>
-
 </body>
 </html>

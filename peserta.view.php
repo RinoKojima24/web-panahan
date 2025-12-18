@@ -1,12 +1,68 @@
 <?php
 include 'panggil.php';
-if($_SESSION['role']  != 'admin') {
-    header('Location: kegiatan.view.php');
-    exit;
+include 'check_access.php';
+requireAdmin();
+
+// Handle update request
+if (isset($_POST['update_id'])) {
+    $update_id = intval($_POST['update_id']);
+    $nama_peserta = $_POST['nama_peserta'];
+    $category_id = intval($_POST['category_id']);
+    $kegiatan_id = intval($_POST['kegiatan_id']);
+    $tanggal_lahir = $_POST['tanggal_lahir'];
+    $jenis_kelamin = $_POST['jenis_kelamin'];
+    $asal_kota = $_POST['asal_kota'];
+    $nama_club = $_POST['nama_club'];
+    $sekolah = $_POST['sekolah'];
+    $kelas = $_POST['kelas'];
+    $nomor_hp = $_POST['nomor_hp'];
+    
+    $stmt = $conn->prepare("UPDATE peserta SET nama_peserta=?, category_id=?, kegiatan_id=?, tanggal_lahir=?, jenis_kelamin=?, asal_kota=?, nama_club=?, sekolah=?, kelas=?, nomor_hp=? WHERE id=?");
+    $stmt->bind_param("siisssssssi", $nama_peserta, $category_id, $kegiatan_id, $tanggal_lahir, $jenis_kelamin, $asal_kota, $nama_club, $sekolah, $kelas, $nomor_hp, $update_id);
+    
+    if ($stmt->execute()) {
+        $success_message = "Data peserta berhasil diperbarui!";
+    } else {
+        $error_message = "Gagal memperbarui data peserta!";
+    }
 }
+
+// Handle delete request
+if (isset($_POST['delete_id'])) {
+    $delete_id = intval($_POST['delete_id']);
+    
+    // Get bukti pembayaran file first to delete it
+    $stmt = $conn->prepare("SELECT bukti_pembayaran FROM peserta WHERE id = ?");
+    $stmt->bind_param("i", $delete_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $peserta_data = $result->fetch_assoc();
+    
+    if ($peserta_data) {
+        // Delete file if exists
+        if (!empty($peserta_data['bukti_pembayaran'])) {
+            $file_path = 'uploads/' . $peserta_data['bukti_pembayaran'];
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+        }
+        
+        // Delete from database
+        $stmt = $conn->prepare("DELETE FROM peserta WHERE id = ?");
+        $stmt->bind_param("i", $delete_id);
+        
+        if ($stmt->execute()) {
+            $success_message = "Data peserta berhasil dihapus!";
+        } else {
+            $error_message = "Gagal menghapus data peserta!";
+        }
+    } else {
+        $error_message = "Data peserta tidak ditemukan!";
+    }
+}
+
 // Handle export to Excel
 if (isset($_GET['export']) && $_GET['export'] == 'excel') {
-    // Set headers untuk download Excel
     header("Content-Type: application/vnd.ms-excel");
     header("Content-Disposition: attachment; filename=data_peserta_" . date('Y-m-d') . ".xls");
     header("Pragma: no-cache");
@@ -69,11 +125,30 @@ if (isset($_GET['export']) && $_GET['export'] == 'excel') {
         $result = $conn->query($query);
     }
 
+    // Group data by nama_peserta
+    $groupedData = [];
+    while ($row = $result->fetch_assoc()) {
+        $nama = $row['nama_peserta'];
+        if (!isset($groupedData[$nama])) {
+            $groupedData[$nama] = $row;
+            $groupedData[$nama]['categories'] = [];
+            $groupedData[$nama]['kegiatan'] = [];
+            $groupedData[$nama]['ids'] = [];
+        }
+        $groupedData[$nama]['ids'][] = $row['id'];
+        if (!empty($row['category_name']) && !in_array($row['category_name'], $groupedData[$nama]['categories'])) {
+            $groupedData[$nama]['categories'][] = $row['category_name'];
+        }
+        if (!empty($row['nama_kegiatan']) && !in_array($row['nama_kegiatan'], $groupedData[$nama]['kegiatan'])) {
+            $groupedData[$nama]['kegiatan'][] = $row['nama_kegiatan'];
+        }
+    }
+
     // Output Excel content
     echo "<table border='1'>";
     echo "<tr>";
     echo "<th>No</th>";
-    echo "<th>ID</th>";
+    echo "<th>ID(s)</th>";
     echo "<th>Nama Peserta</th>";
     echo "<th>Kategori</th>";
     echo "<th>Kegiatan</th>";
@@ -86,13 +161,11 @@ if (isset($_GET['export']) && $_GET['export'] == 'excel') {
     echo "<th>Kelas</th>";
     echo "<th>Nomor HP</th>";
     echo "<th>Status Pembayaran</th>";
-    echo "<th>Bukti Pembayaran</th>";
     echo "<th>Tanggal Daftar</th>";
     echo "</tr>";
     
     $no = 1;
-    while ($row = $result->fetch_assoc()) {
-        // Hitung umur
+    foreach ($groupedData as $row) {
         $umur = "-";
         if (!empty($row['tanggal_lahir'])) {
             $dob = new DateTime($row['tanggal_lahir']);
@@ -104,10 +177,10 @@ if (isset($_GET['export']) && $_GET['export'] == 'excel') {
         
         echo "<tr>";
         echo "<td>" . $no++ . "</td>";
-        echo "<td>" . $row['id'] . "</td>";
+        echo "<td>" . implode(', ', $row['ids']) . "</td>";
         echo "<td>" . htmlspecialchars($row['nama_peserta']) . "</td>";
-        echo "<td>" . htmlspecialchars($row['category_name'] ?? '-') . "</td>";
-        echo "<td>" . htmlspecialchars($row['nama_kegiatan'] ?? '-') . "</td>";
+        echo "<td>" . htmlspecialchars(implode(', ', $row['categories']) ?: '-') . "</td>";
+        echo "<td>" . htmlspecialchars(implode(', ', $row['kegiatan']) ?: '-') . "</td>";
         echo "<td>" . htmlspecialchars($row['tanggal_lahir'] ?? '-') . "</td>";
         echo "<td>" . $umur . "</td>";
         echo "<td>" . htmlspecialchars($row['jenis_kelamin']) . "</td>";
@@ -117,17 +190,11 @@ if (isset($_GET['export']) && $_GET['export'] == 'excel') {
         echo "<td>" . htmlspecialchars($row['kelas'] ?? '-') . "</td>";
         echo "<td>" . htmlspecialchars($row['nomor_hp'] ?? '-') . "</td>";
         echo "<td>" . $statusBayar . "</td>";
-        echo "<td>" . htmlspecialchars($row['bukti_pembayaran'] ?? '-') . "</td>";
         echo "<td>" . htmlspecialchars($row['created_at'] ?? '-') . "</td>";
         echo "</tr>";
     }
     echo "</table>";
     exit();
-}
-
-if(isset($_GET['hapus_peserta'])) {
-    $delete_score_board = mysqli_query($conn,'DELETE FROM `peserta` WHERE id ='.$_GET['hapus_peserta']);
-    header("Location: peserta.view.php");
 }
 
 // --- Ambil kategori untuk dropdown ---
@@ -202,10 +269,49 @@ if (!empty($params)) {
     $result = $conn->query($query);
 }
 
-$peserta = [];
+// Group peserta by nama_peserta
+$pesertaGrouped = [];
+$totalPeserta = 0;
+$totalLaki = 0;
+$totalPerempuan = 0;
+$totalBayar = 0;
+
 while ($row = $result->fetch_assoc()) {
-    $peserta[] = $row;
+    $totalPeserta++;
+    if ($row['jenis_kelamin'] == 'Laki-laki') $totalLaki++;
+    if ($row['jenis_kelamin'] == 'Perempuan') $totalPerempuan++;
+    if (!empty($row['bukti_pembayaran'])) $totalBayar++;
+    
+    $nama = $row['nama_peserta'];
+    
+    if (!isset($pesertaGrouped[$nama])) {
+        // First entry for this name
+        $pesertaGrouped[$nama] = [
+            'data' => $row,
+            'ids' => [$row['id']],
+            'categories' => [],
+            'kegiatan' => [],
+            'all_records' => [$row]
+        ];
+    } else {
+        // Additional entry for this name
+        $pesertaGrouped[$nama]['ids'][] = $row['id'];
+        $pesertaGrouped[$nama]['all_records'][] = $row;
+    }
+    
+    // Collect unique categories
+    if (!empty($row['category_name']) && !in_array($row['category_name'], $pesertaGrouped[$nama]['categories'])) {
+        $pesertaGrouped[$nama]['categories'][] = $row['category_name'];
+    }
+    
+    // Collect unique kegiatan
+    if (!empty($row['nama_kegiatan']) && !in_array($row['nama_kegiatan'], $pesertaGrouped[$nama]['kegiatan'])) {
+        $pesertaGrouped[$nama]['kegiatan'][] = $row['nama_kegiatan'];
+    }
 }
+
+// Count unique participants
+$uniqueCount = count($pesertaGrouped);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -226,7 +332,7 @@ while ($row = $result->fetch_assoc()) {
             --dark-color: #1f2937;
             --light-gray: #f8fafc;
             --medium-gray: #e2e8f0;
-            --text-dark: #374151;
+            --text-dark: #122036ff;
             --text-light: #6b7280;
         }
 
@@ -330,14 +436,6 @@ while ($row = $result->fetch_assoc()) {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
 
-        .table tbody tr:last-child td:first-child {
-            border-bottom-left-radius: 20px;
-        }
-
-        .table tbody tr:last-child td:last-child {
-            border-bottom-right-radius: 20px;
-        }
-
         .badge {
             padding: 0.5rem 0.75rem;
             border-radius: 50px;
@@ -345,14 +443,8 @@ while ($row = $result->fetch_assoc()) {
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-        }
-
-        .badge-gender {
-            font-size: 0.75rem;
-        }
-
-        .badge-status {
-            font-size: 0.7rem;
+            margin: 2px;
+            display: inline-block;
         }
 
         .btn {
@@ -362,6 +454,11 @@ while ($row = $result->fetch_assoc()) {
             transition: all 0.3s ease;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
         }
 
         .btn-filter {
@@ -374,6 +471,32 @@ while ($row = $result->fetch_assoc()) {
             background: linear-gradient(135deg, #5855eb 0%, #7c3aed 100%);
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger-color) 0%, #dc2626 100%);
+            border: none;
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, var(--warning-color) 0%, #ea580c 100%);
+            border: none;
+            color: white;
+            box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+        }
+
+        .btn-warning:hover {
+            background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+            color: white;
         }
 
         .btn-outline-secondary {
@@ -493,7 +616,6 @@ while ($row = $result->fetch_assoc()) {
             text-overflow: ellipsis;
         }
 
-        /* Custom scrollbar */
         .table-responsive::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -509,22 +631,12 @@ while ($row = $result->fetch_assoc()) {
             border-radius: 10px;
         }
 
-        .text-info {
-            color: var(--accent-color) !important;
+        .alert {
+            border-radius: 12px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
 
-        .text-info:hover {
-            color: #0891b2 !important;
-        }
-
-        /* Modal untuk gambar */
-        .modal-body img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 10px;
-        }
-
-        /* Animation for loading */
         @keyframes fadeInUp {
             from {
                 opacity: 0;
@@ -540,21 +652,46 @@ while ($row = $result->fetch_assoc()) {
             animation: fadeInUp 0.6s ease;
         }
 
-        .stats-card:nth-child(1) { animation-delay: 0.1s; }
-        .stats-card:nth-child(2) { animation-delay: 0.2s; }
-        .stats-card:nth-child(3) { animation-delay: 0.3s; }
-        .stats-card:nth-child(4) { animation-delay: 0.4s; }
-
         .action-buttons {
             margin-bottom: 2rem;
         }
 
-        /* Dark mode support */
-        @media (prefers-color-scheme: dark) {
-            body {
-                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-                color: #e2e8f0;
-            }
+        .modal-content {
+            border-radius: 20px;
+            border: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-header {
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            border-bottom: none;
+            padding: 1.5rem 2rem;
+        }
+
+        .modal-body {
+            padding: 2rem;
+        }
+
+        .modal-footer {
+            border-top: none;
+            padding: 1.5rem 2rem;
+        }
+
+        .duplicate-count {
+            background: linear-gradient(135deg, #f59e0b, #ea580c);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+
+        .category-group, .kegiatan-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
         }
     </style>
 </head>
@@ -562,8 +699,23 @@ while ($row = $result->fetch_assoc()) {
 <div class="container-fluid py-4">
     <div class="header-card text-center">
         <h1><i class="fas fa-bow-arrow me-3"></i>Data Peserta Turnamen Panahan</h1>
-        <p class="mb-0">Sistem Manajemen Peserta Turnamen</p>
+        <p class="mb-0">Sistem Manajemen Peserta Turnamen (Mode: Penggabungan Nama)</p>
     </div>
+
+    <!-- Alert Messages -->
+    <?php if (isset($success_message)): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle me-2"></i><?= $success_message ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+    
+    <?php if (isset($error_message)): ?>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle me-2"></i><?= $error_message ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
 
     <!-- Action Buttons -->
     <div class="action-buttons d-flex justify-content-between align-items-center">
@@ -574,7 +726,6 @@ while ($row = $result->fetch_assoc()) {
         </div>
         <div>
             <?php
-            // Build export URL with current filters
             $exportParams = [];
             if (!empty($category_id)) $exportParams['category_id'] = $category_id;
             if (!empty($kegiatan_id)) $exportParams['kegiatan_id'] = $kegiatan_id;
@@ -594,25 +745,26 @@ while ($row = $result->fetch_assoc()) {
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="stats-card text-center text-white">
-                <h4><?= count($peserta) ?></h4>
-                <small>Total Peserta</small>
+                <h4><?= $uniqueCount ?></h4>
+                <small>Peserta Unik</small>
+                <div class="mt-2 text-muted" style="font-size: 0.75rem;">Total Entri: <?= $totalPeserta ?></div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-card text-center text-white">
-                <h4><?= count(array_filter($peserta, fn($p) => $p['jenis_kelamin'] == 'Laki-laki')) ?></h4>
+                <h4><?= $totalLaki ?></h4>
                 <small>Laki-laki</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-card text-center text-white">
-                <h4><?= count(array_filter($peserta, fn($p) => $p['jenis_kelamin'] == 'Perempuan')) ?></h4>
+                <h4><?= $totalPerempuan ?></h4>
                 <small>Perempuan</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-card text-center text-white">
-                <h4><?= count(array_filter($peserta, fn($p) => !empty($p['bukti_pembayaran']))) ?></h4>
+                <h4><?= $totalBayar ?></h4>
                 <small>Sudah Bayar</small>
             </div>
         </div>
@@ -675,6 +827,14 @@ while ($row = $result->fetch_assoc()) {
         </form>
     </div>
 
+    <!-- Info Alert -->
+    <?php if ($totalPeserta > $uniqueCount): ?>
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Info:</strong> Ditemukan <?= $totalPeserta - $uniqueCount ?> peserta dengan nama yang sama. Data telah digabungkan berdasarkan nama peserta.
+    </div>
+    <?php endif; ?>
+
     <!-- Tabel Peserta -->
     <div class="data-table">
         <div class="table-responsive">
@@ -693,12 +853,13 @@ while ($row = $result->fetch_assoc()) {
                         <th>Kelas</th>
                         <th>No. HP</th>
                         <th>Status</th>
+                        <th style="width: 150px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php if (empty($peserta)): ?>
+                <?php if (empty($pesertaGrouped)): ?>
                     <tr>
-                        <td colspan="12" class="text-center text-muted py-4">
+                        <td colspan="13" class="text-center text-muted py-4">
                             <i class="fas fa-inbox fa-3x mb-3"></i><br>
                             Tidak ada data peserta yang ditemukan.
                         </td>
@@ -706,7 +867,10 @@ while ($row = $result->fetch_assoc()) {
                 <?php else: ?>
                     <?php 
                     $no = 1; 
-                    foreach ($peserta as $p): 
+                    foreach ($pesertaGrouped as $nama => $group): 
+                        $p = $group['data'];
+                        $recordCount = count($group['all_records']);
+                        
                         // Hitung umur dari tanggal_lahir
                         $umur = "-";
                         if (!empty($p['tanggal_lahir'])) {
@@ -722,29 +886,43 @@ while ($row = $result->fetch_assoc()) {
                         <tr>
                             <td class="text-center"><?= $no++ ?></td>
                             <td>
-                                <strong><?= htmlspecialchars($p['nama_peserta']) ?></strong><br>
-                                <small class="text-muted">ID: <?= $p['id'] ?></small>
+                                <strong><?= htmlspecialchars($nama) ?></strong>
+                                <?php if ($recordCount > 1): ?>
+                                    <span class="duplicate-count" title="Peserta ini memiliki <?= $recordCount ?> pendaftaran">
+                                        x<?= $recordCount ?>
+                                    </span>
+                                <?php endif; ?>
+                                <br>
+                                <small class="text-muted">ID: <?= implode(', ', $group['ids']) ?></small>
                             </td>
                             <td>
-                                <?php if (!empty($p['category_name'])): ?>
-                                    <span class="badge bg-info text-dark"><?= htmlspecialchars($p['category_name']) ?></span>
+                                <?php if (!empty($group['categories'])): ?>
+                                    <div class="category-group">
+                                        <?php foreach ($group['categories'] as $cat): ?>
+                                            <span class="badge bg-info text-dark"><?= htmlspecialchars($cat) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 <?php else: ?>
                                     <span class="text-muted small">Belum ditentukan</span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if (!empty($p['nama_kegiatan'])): ?>
-                                    <span class="badge bg-primary"><?= htmlspecialchars($p['nama_kegiatan']) ?></span>
+                                <?php if (!empty($group['kegiatan'])): ?>
+                                    <div class="kegiatan-group">
+                                        <?php foreach ($group['kegiatan'] as $keg): ?>
+                                            <span class="badge bg-primary"><?= htmlspecialchars($keg) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 <?php else: ?>
                                     <span class="text-muted small">Belum ditentukan</span>
                                 <?php endif; ?>
                             </td>
                             <td class="small-text"><?= $umur ?></td>
                             <td>
-                                <!-- <span class="badge badge-gender <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'bg-primary' : 'bg-danger' ?>">
+                                <span class="badge badge-gender <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'bg-primary' : 'bg-danger' ?>">
                                     <i class="fas <?= $p['jenis_kelamin'] == 'Laki-laki' ? 'fa-mars' : 'fa-venus' ?> me-1"></i>
-                                    <?= "-" // htmlspecialchars($p['jenis_kelamin']) ?>
-                                </span> -->
+                                    <?= htmlspecialchars($p['jenis_kelamin']) ?>
+                                </span>
                             </td>
                             <td class="small-text"><?= htmlspecialchars($p['asal_kota'] ?? '-') ?></td>
                             <td class="small-text text-truncate-custom" title="<?= htmlspecialchars($p['nama_club'] ?? '') ?>">
@@ -770,13 +948,25 @@ while ($row = $result->fetch_assoc()) {
                                 </span>
                                 <?php if (!empty($p['bukti_pembayaran'])): ?>
                                     <br><small class="text-muted">
-                                        <a href="#" class="text-info" onclick="showImage('<?= htmlspecialchars($p['bukti_pembayaran']) ?>', '<?= htmlspecialchars($p['nama_peserta']) ?>')">
+                                        <a href="#" class="text-info" onclick="showImage('<?= htmlspecialchars($p['bukti_pembayaran']) ?>', '<?= htmlspecialchars($nama) ?>')">
                                             <i class="fas fa-file-image me-1"></i>Lihat Bukti
                                         </a>
-                                        <br>
                                     </small>
                                 <?php endif; ?>
-                                <a style="color : red; text-decoration : none;" onclick="delete_peserta('peserta.view.php?hapus_peserta=<?=$p['id']?>')">Hapus Data</a>
+                            </td>
+                            <td class="text-center">
+                                <?php if ($recordCount > 1): ?>
+                                    <button type="button" class="btn btn-info btn-sm mb-1" onclick="showDetails(<?= htmlspecialchars(json_encode($group['all_records'])) ?>)" title="Lihat Detail">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <br>
+                                <?php endif; ?>
+                                <button type="button" class="btn btn-warning btn-sm me-1 mb-1" onclick="editPeserta(<?= htmlspecialchars(json_encode($p)) ?>)" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button type="button" class="btn btn-danger btn-sm mb-1" onclick="confirmDelete(<?= $p['id'] ?>, '<?= htmlspecialchars($nama, ENT_QUOTES) ?>')" title="Hapus">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -786,11 +976,133 @@ while ($row = $result->fetch_assoc()) {
         </div>
     </div>
     
-    <?php if (!empty($peserta)): ?>
+    <?php if (!empty($pesertaGrouped)): ?>
         <div class="mt-3 text-end">
-            <small class="text-muted">Menampilkan <?= count($peserta) ?> peserta</small>
+            <small class="text-muted">
+                Menampilkan <?= $uniqueCount ?> peserta unik dari <?= $totalPeserta ?> total entri
+            </small>
         </div>
     <?php endif; ?>
+</div>
+
+<!-- Modal Detail Peserta (untuk nama duplikat) -->
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="detailModalLabel">
+                    <i class="fas fa-info-circle me-2"></i>Detail Pendaftaran Peserta
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="detailContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit Peserta -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title" id="editModalLabel">
+                    <i class="fas fa-edit me-2"></i>Edit Data Peserta
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editForm">
+                <div class="modal-body">
+                    <input type="hidden" name="update_id" id="edit_id">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nama Peserta <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="nama_peserta" id="edit_nama_peserta" required>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Kategori <span class="text-danger">*</span></label>
+                            <select class="form-select" name="category_id" id="edit_category_id" required>
+                                <option value="">Pilih Kategori</option>
+                                <?php foreach ($kategoriList as $kat): ?>
+                                    <option value="<?= $kat['id'] ?>"><?= htmlspecialchars($kat['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Kegiatan <span class="text-danger">*</span></label>
+                            <select class="form-select" name="kegiatan_id" id="edit_kegiatan_id" required>
+                                <option value="">Pilih Kegiatan</option>
+                                <?php foreach ($kegiatanList as $keg): ?>
+                                    <option value="<?= $keg['id'] ?>"><?= htmlspecialchars($keg['nama_kegiatan']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Tanggal Lahir <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" name="tanggal_lahir" id="edit_tanggal_lahir" required>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Jenis Kelamin <span class="text-danger">*</span></label>
+                            <select class="form-select" name="jenis_kelamin" id="edit_jenis_kelamin" required>
+                                <option value="">Pilih Jenis Kelamin</option>
+                                <option value="Laki-laki">Laki-laki</option>
+                                <option value="Perempuan">Perempuan</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Asal Kota</label>
+                            <input type="text" class="form-control" name="asal_kota" id="edit_asal_kota">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Nama Club</label>
+                            <input type="text" class="form-control" name="nama_club" id="edit_nama_club">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Sekolah</label>
+                            <input type="text" class="form-control" name="sekolah" id="edit_sekolah">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Kelas</label>
+                            <input type="text" class="form-control" name="kelas" id="edit_kelas">
+                        </div>
+                        
+                        <div class="col-md-12">
+                            <label class="form-label">Nomor HP</label>
+                            <input type="text" class="form-control" name="nomor_hp" id="edit_nomor_hp" placeholder="Contoh: 08123456789">
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <small><strong>Catatan:</strong> Field yang bertanda <span class="text-danger">*</span> wajib diisi.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>Batal
+                    </button>
+                    <button type="submit" class="btn btn-warning text-white">
+                        <i class="fas fa-save me-2"></i>Simpan Perubahan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- Modal untuk menampilkan gambar -->
@@ -816,47 +1128,158 @@ while ($row = $result->fetch_assoc()) {
     </div>
 </div>
 
+<!-- Modal Konfirmasi Hapus -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Konfirmasi Hapus
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <i class="fas fa-user-times fa-4x text-danger mb-3"></i>
+                    <h5>Apakah Anda yakin ingin menghapus peserta ini?</h5>
+                    <p class="text-muted mb-0">Nama Peserta:</p>
+                    <p class="fw-bold" id="deletePesertaName"></p>
+                </div>
+                <div class="alert alert-warning">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Perhatian:</strong> Data yang dihapus tidak dapat dikembalikan!
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Batal
+                </button>
+                <form method="POST" id="deleteForm" style="display: inline;">
+                    <input type="hidden" name="delete_id" id="deleteIdInput">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash-alt me-2"></i>Ya, Hapus
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script>
-// Auto-submit form on select change untuk better UX
-document.querySelectorAll('select[name="category_id"], select[name="kegiatan_id"], select[name="gender"]').forEach(function(select) {
-    select.addEventListener('change', function() {
-        this.form.submit();
+// Function untuk menampilkan detail peserta dengan nama duplikat
+function showDetails(records) {
+    const detailContent = document.getElementById('detailContent');
+    
+    let html = '<div class="alert alert-info"><i class="fas fa-info-circle me-2"></i>';
+    html += '<strong>Peserta ini memiliki ' + records.length + ' pendaftaran dengan kategori/kegiatan yang berbeda</strong></div>';
+    
+    html += '<div class="table-responsive">';
+    html += '<table class="table table-bordered table-striped">';
+    html += '<thead class="table-dark">';
+    html += '<tr>';
+    html += '<th>No</th>';
+    html += '<th>ID</th>';
+    html += '<th>Kategori</th>';
+    html += '<th>Kegiatan</th>';
+    html += '<th>Tanggal Lahir</th>';
+    html += '<th>Gender</th>';
+    html += '<th>Asal Kota</th>';
+    html += '<th>Club</th>';
+    html += '<th>Sekolah</th>';
+    html += '<th>Status Bayar</th>';
+    html += '<th>Aksi</th>';
+    html += '</tr>';
+    html += '</thead>';
+    html += '<tbody>';
+    
+    records.forEach(function(record, index) {
+        const statusBadge = record.bukti_pembayaran ? 
+            '<span class="badge bg-success">Sudah Bayar</span>' : 
+            '<span class="badge bg-warning text-dark">Belum Bayar</span>';
+        
+        html += '<tr>';
+        html += '<td>' + (index + 1) + '</td>';
+        html += '<td>' + record.id + '</td>';
+        html += '<td>' + (record.category_name || '-') + '</td>';
+        html += '<td>' + (record.nama_kegiatan || '-') + '</td>';
+        html += '<td>' + (record.tanggal_lahir || '-') + '</td>';
+        html += '<td>' + record.jenis_kelamin + '</td>';
+        html += '<td>' + (record.asal_kota || '-') + '</td>';
+        html += '<td>' + (record.nama_club || '-') + '</td>';
+        html += '<td>' + (record.sekolah || '-') + '</td>';
+        html += '<td>' + statusBadge + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-warning btn-sm me-1" onclick="editPeserta(' + JSON.stringify(record).replace(/"/g, '&quot;') + ')" title="Edit"><i class="fas fa-edit"></i></button>';
+        html += '<button class="btn btn-danger btn-sm" onclick="confirmDelete(' + record.id + ', \'' + record.nama_peserta.replace(/'/g, "\\'") + '\')" title="Hapus"><i class="fas fa-trash-alt"></i></button>';
+        html += '</td>';
+        html += '</tr>';
     });
-});
-
-function delete_peserta(url) {
-    if(confirm("Apakah anda yakin akan menghapus data ini?")) {
-        window.location.href = url;
-    }
+    
+    html += '</tbody>';
+    html += '</table>';
+    html += '</div>';
+    
+    detailContent.innerHTML = html;
+    
+    const detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
+    detailModal.show();
 }
 
-// Tooltip untuk teks yang terpotong
-var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'))
-var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-    return new bootstrap.Tooltip(tooltipTriggerEl)
-});
+// Function untuk edit peserta
+function editPeserta(data) {
+    document.getElementById('edit_id').value = data.id;
+    document.getElementById('edit_nama_peserta').value = data.nama_peserta || '';
+    document.getElementById('edit_category_id').value = data.category_id || '';
+    document.getElementById('edit_kegiatan_id').value = data.kegiatan_id || '';
+    document.getElementById('edit_tanggal_lahir').value = data.tanggal_lahir || '';
+    document.getElementById('edit_jenis_kelamin').value = data.jenis_kelamin || '';
+    document.getElementById('edit_asal_kota').value = data.asal_kota || '';
+    document.getElementById('edit_nama_club').value = data.nama_club || '';
+    document.getElementById('edit_sekolah').value = data.sekolah || '';
+    document.getElementById('edit_kelas').value = data.kelas || '';
+    document.getElementById('edit_nomor_hp').value = data.nomor_hp || '';
+    
+    // Close detail modal if open
+    const detailModal = bootstrap.Modal.getInstance(document.getElementById('detailModal'));
+    if (detailModal) {
+        detailModal.hide();
+    }
+    
+    const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+    editModal.show();
+}
 
-// Function untuk menampilkan gambar dalam modal - diperbaiki berdasarkan contoh code
+// Function untuk konfirmasi hapus
+function confirmDelete(id, nama) {
+    document.getElementById('deleteIdInput').value = id;
+    document.getElementById('deletePesertaName').textContent = nama;
+    
+    // Close detail modal if open
+    const detailModal = bootstrap.Modal.getInstance(document.getElementById('detailModal'));
+    if (detailModal) {
+        detailModal.hide();
+    }
+    
+    const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    deleteModal.show();
+}
+
+// Function untuk menampilkan gambar dalam modal
 function showImage(filename, pesertaName) {
     const modal = new bootstrap.Modal(document.getElementById('imageModal'));
     const modalTitle = document.getElementById('imageModalLabel');
     const modalBody = document.querySelector('#imageModal .modal-body');
     const downloadLink = document.getElementById('downloadImage');
     
-    // Set title
     modalTitle.textContent = 'Bukti Pembayaran - ' + pesertaName;
     
-    // Cek ekstensi file untuk menentukan cara menampilkan
     const fileExtension = filename.toLowerCase().split('.').pop();
-    // Path disesuaikan dengan struktur folder uploads biasa
     const imagePath = 'uploads/' + filename;
     
-    // Reset modal body
     modalBody.innerHTML = '';
     
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(fileExtension)) {
-        // Tampilkan sebagai gambar
         const img = document.createElement('img');
         img.id = 'modalImage';
         img.className = 'img-fluid';
@@ -865,13 +1288,11 @@ function showImage(filename, pesertaName) {
         img.style.borderRadius = '8px';
         img.alt = 'Bukti Pembayaran';
         
-        // Error div
         const errorDiv = document.createElement('div');
         errorDiv.id = 'imageError';
         errorDiv.className = 'alert alert-warning mt-3';
         errorDiv.style.display = 'none';
         
-        // Info div
         const infoDiv = document.createElement('div');
         infoDiv.className = 'mt-3 p-3 bg-light rounded';
         infoDiv.style.fontSize = '14px';
@@ -881,19 +1302,17 @@ function showImage(filename, pesertaName) {
             <strong>Path:</strong> ${imagePath}
         `;
         
-        // Test loading gambar dengan berbagai kemungkinan path
         const possiblePaths = [
-            'uploads/' + filename,           // Path standar
-            'uploads/bukti/' + filename,     // Jika ada subfolder bukti
-            'uploads/pembayaran/' + filename,// Jika ada subfolder pembayaran
-            filename                         // Langsung tanpa folder
+            'uploads/' + filename,
+            'uploads/bukti/' + filename,
+            'uploads/pembayaran/' + filename,
+            filename
         ];
         
         let pathIndex = 0;
         
         function tryNextPath() {
             if (pathIndex >= possiblePaths.length) {
-                // Semua path gagal, tampilkan error
                 errorDiv.innerHTML = `
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     Gambar tidak dapat dimuat dari semua path yang dicoba.
@@ -920,38 +1339,31 @@ function showImage(filename, pesertaName) {
             const currentPath = possiblePaths[pathIndex];
             
             testImage.onload = function() {
-                // Gambar berhasil dimuat
                 img.src = currentPath;
                 modalBody.appendChild(img);
                 modalBody.appendChild(infoDiv);
                 
-                // Update info dengan path yang berhasil
                 infoDiv.innerHTML = `
                     <strong>File:</strong> ${filename}<br>
                     <strong>Peserta:</strong> ${pesertaName}<br>
                     <strong>Path:</strong> ${currentPath} ✅
                 `;
                 
-                // Set download link
                 downloadLink.href = currentPath;
                 downloadLink.download = 'bukti_pembayaran_' + pesertaName.replace(/[^a-zA-Z0-9]/g, '_') + '.' + fileExtension;
             };
             
             testImage.onerror = function() {
-                // Coba path berikutnya
                 pathIndex++;
                 tryNextPath();
             };
             
-            // Mulai test loading
             testImage.src = currentPath;
         }
         
-        // Mulai dari path pertama
         tryNextPath();
         
     } else if (fileExtension === 'pdf') {
-        // Tampilkan interface untuk PDF
         modalBody.innerHTML = `
             <div class="text-center p-4">
                 <div style="font-size: 48px; color: #dc3545; margin-bottom: 20px;">📄</div>
@@ -972,12 +1384,10 @@ function showImage(filename, pesertaName) {
             </div>
         `;
         
-        // Set download link
         downloadLink.href = imagePath;
         downloadLink.download = filename;
         
     } else {
-        // File format tidak didukung
         modalBody.innerHTML = `
             <div class="text-center p-4">
                 <div style="font-size: 48px; color: #ffc107; margin-bottom: 20px;">⚠️</div>
@@ -999,21 +1409,41 @@ function showImage(filename, pesertaName) {
             </div>
         `;
         
-        // Set download link
         downloadLink.href = imagePath;
         downloadLink.download = filename;
     }
     
-    // Show modal
     modal.show();
 }
 
+// Auto-submit form on select change untuk better UX
+document.querySelectorAll('select[name="category_id"], select[name="kegiatan_id"], select[name="gender"]').forEach(function(select) {
+    select.addEventListener('change', function() {
+        this.form.submit();
+    });
+});
+
+// Tooltip untuk teks yang terpotong
+var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'))
+var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl)
+});
+
 // Konfirmasi sebelum export Excel
 document.querySelector('a[href*="export=excel"]').addEventListener('click', function(e) {
-    if (!confirm('Apakah Anda yakin ingin mengexport data ke Excel? Proses ini mungkin membutuhkan waktu beberapa detik.')) {
+    if (!confirm('Apakah Anda yakin ingin mengexport data ke Excel? Data akan diexport dalam format yang sudah digabungkan.')) {
         e.preventDefault();
     }
 });
+
+// Auto dismiss alerts after 5 seconds
+setTimeout(function() {
+    var alerts = document.querySelectorAll('.alert-success, .alert-danger');
+    alerts.forEach(function(alert) {
+        var bsAlert = new bootstrap.Alert(alert);
+        bsAlert.close();
+    });
+}, 5000);
 </script>
 </body>
 </html>

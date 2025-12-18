@@ -1,16 +1,12 @@
 <?php
+include 'check_access.php';
+requireAdmin();
 // Check if panggil.php exists and includes proper database connection
 if (!file_exists('panggil.php')) {
     die("Error: panggil.php file not found!");
 }
 
 include 'panggil.php';
-
-
-if($_SESSION['role']  != 'admin') {
-    header('Location: kegiatan.view.php');
-    exit;
-}
 
 // Check if database connection is properly established
 // Assuming your panggil.php uses $conn or $connection variable
